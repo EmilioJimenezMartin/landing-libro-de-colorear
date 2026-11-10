@@ -3,6 +3,7 @@ import gsap from 'gsap'
 import { collections, download, img, LOCAL } from '../data'
 import { autoColors, hexToU32, labelAt, loadImage, paint, segment, type Seg } from '../lib/fill'
 
+const SPINE_H = [0, 14, 6, 20, 10, 2, 16, 8, 22, 4, 12]
 const NEUTRALS = ['#16141a', '#4a4550', '#9a93a0', '#ffffff', '#f3ead8', '#c9a27a']
 
 export type StudioTarget = { c: number; p: number; nonce: number }
@@ -19,6 +20,16 @@ export function Studio({ target }: { target: StudioTarget }) {
   const colors = useRef<Uint32Array>(new Uint32Array(0))
   const history = useRef<Uint32Array[]>([])
   const lines = useRef<HTMLImageElement | null>(null)
+  const frame = useRef<HTMLDivElement>(null)
+  const inner = useRef<HTMLDivElement>(null)
+  const view = useRef({ s: 1, x: 0, y: 0 })
+  const [zoomed, setZoomed] = useState(false)
+  const pointers = useRef(new Map<number, { x: number; y: number }>())
+  const gesture = useRef<{
+    tap: { x: number; y: number; t: number; moved: boolean } | null
+    pan: { x: number; y: number; px: number; py: number } | null
+    pinch: { d: number; s: number; mx: number; my: number; x: number; y: number } | null
+  }>({ tap: null, pan: null, pinch: null })
 
   const c = collections[ci]
   const page = c.pages[pi]
@@ -80,12 +91,53 @@ export function Studio({ target }: { target: StudioTarget }) {
     )
   }, [])
 
-  const onPointer = (e: React.PointerEvent<HTMLDivElement>) => {
+  // ---- zoom y desplazamiento (pellizco, arrastre, botones, rueda con Ctrl) ----
+  const applyView = useCallback((s: number, x: number, y: number) => {
+    const f = frame.current!
+    const W = f.clientWidth
+    const H = f.clientHeight
+    s = Math.min(6, Math.max(1, s))
+    x = Math.min(0, Math.max(W * (1 - s), x))
+    y = Math.min(0, Math.max(H * (1 - s), y))
+    view.current = { s, x, y }
+    inner.current!.style.transform = `translate(${x}px, ${y}px) scale(${s})`
+    setZoomed(s > 1.01)
+  }, [])
+
+  const zoomAt = useCallback(
+    (factor: number, cx?: number, cy?: number) => {
+      const f = frame.current!
+      const { s, x, y } = view.current
+      const px = cx ?? f.clientWidth / 2
+      const py = cy ?? f.clientHeight / 2
+      const ns = Math.min(6, Math.max(1, s * factor))
+      applyView(ns, px - ((px - x) / s) * ns, py - ((py - y) / s) * ns)
+    },
+    [applyView],
+  )
+
+  useEffect(() => {
+    applyView(1, 0, 0)
+  }, [src, applyView])
+
+  useEffect(() => {
+    const f = frame.current!
+    const wheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return
+      e.preventDefault()
+      const r = f.getBoundingClientRect()
+      zoomAt(Math.exp(-e.deltaY * 0.01), e.clientX - r.left, e.clientY - r.top)
+    }
+    f.addEventListener('wheel', wheel, { passive: false })
+    return () => f.removeEventListener('wheel', wheel)
+  }, [zoomAt])
+
+  const paintAt = (clientX: number, clientY: number) => {
     const s = seg.current
     if (!s || !ready) return
-    const r = e.currentTarget.getBoundingClientRect()
-    const x = ((e.clientX - r.left) / r.width) * s.w
-    const y = ((e.clientY - r.top) / r.height) * s.h
+    const r = inner.current!.getBoundingClientRect()
+    const x = ((clientX - r.left) / r.width) * s.w
+    const y = ((clientY - r.top) / r.height) * s.h
     const l = labelAt(s, x, y)
     if (l < 0) return
     const v = hexToU32(color)
@@ -93,6 +145,74 @@ export function Studio({ target }: { target: StudioTarget }) {
     const next = colors.current.slice()
     next[l] = v
     commit(next, x, y)
+  }
+
+  const local = (e: React.PointerEvent) => {
+    const r = frame.current!.getBoundingClientRect()
+    return { x: e.clientX - r.left, y: e.clientY - r.top }
+  }
+  const pinchInfo = () => {
+    const [a, b] = [...pointers.current.values()]
+    return { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 }
+  }
+
+  const onDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      /* puntero sintético o ya liberado */
+    }
+    pointers.current.set(e.pointerId, local(e))
+    const g = gesture.current
+    const { s, x, y } = view.current
+    if (pointers.current.size === 1) {
+      const p = local(e)
+      g.tap = { x: p.x, y: p.y, t: performance.now(), moved: false }
+      g.pan = { x, y, px: p.x, py: p.y }
+      g.pinch = null
+    } else if (pointers.current.size === 2) {
+      g.tap = null
+      g.pan = null
+      const pi = pinchInfo()
+      g.pinch = { d: pi.d, s, mx: pi.mx, my: pi.my, x, y }
+    }
+  }
+
+  const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!pointers.current.has(e.pointerId)) return
+    const p = local(e)
+    pointers.current.set(e.pointerId, p)
+    const g = gesture.current
+    if (g.pinch && pointers.current.size >= 2) {
+      const pi = pinchInfo()
+      const ns = Math.min(6, Math.max(1, (g.pinch.s * pi.d) / g.pinch.d))
+      const cx = (g.pinch.mx - g.pinch.x) / g.pinch.s
+      const cy = (g.pinch.my - g.pinch.y) / g.pinch.s
+      applyView(ns, pi.mx - cx * ns, pi.my - cy * ns)
+      return
+    }
+    if (g.tap && Math.hypot(p.x - g.tap.x, p.y - g.tap.y) > 8) g.tap.moved = true
+    if (g.pan && view.current.s > 1.01 && g.tap?.moved) {
+      applyView(view.current.s, g.pan.x + p.x - g.pan.px, g.pan.y + p.y - g.pan.py)
+    }
+  }
+
+  const onUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const g = gesture.current
+    const wasTap = g.tap && !g.tap.moved && pointers.current.size === 1 && performance.now() - g.tap.t < 600
+    pointers.current.delete(e.pointerId)
+    if (wasTap && e.type === 'pointerup') paintAt(e.clientX, e.clientY)
+    if (pointers.current.size === 1) {
+      // queda un dedo tras el pellizco: sigue arrastrando sin saltos y sin pintar
+      const [rest] = [...pointers.current.values()]
+      g.pinch = null
+      g.tap = null
+      g.pan = { x: view.current.x, y: view.current.y, px: rest.x, py: rest.y }
+    } else if (pointers.current.size === 0) {
+      g.tap = null
+      g.pan = null
+      g.pinch = null
+    }
   }
 
   const magic = () => {
@@ -151,17 +271,31 @@ export function Studio({ target }: { target: StudioTarget }) {
         </h2>
       </header>
 
+      <div className="shelf-row">
+        <div className="shelf" role="tablist" aria-label="Colecciones">
+          {collections.map((col, i) => (
+            <button
+              key={col.id}
+              role="tab"
+              aria-selected={i === ci}
+              className={`spine ${i === ci ? 'on' : ''}`}
+              style={{ '--c-from': col.cover.from, '--c-to': col.cover.to, '--foil': col.cover.foil, '--h': SPINE_H[i % SPINE_H.length] } as React.CSSProperties}
+              onClick={() => { setCi(i); setPi(0); setColor(col.palette[0]) }}
+            >
+              <span className="spine-title">{col.title}</span>
+              <small>{col.pages.length}</small>
+            </button>
+          ))}
+        </div>
+        <div className="shelf-label" aria-live="polite">
+          <span>{c.kicker} · {c.pages.length} láminas</span>
+          <strong>{c.title}</strong>
+          <p>{c.blurb}</p>
+        </div>
+      </div>
+
       <div className="studio-grid">
         <aside className="studio-pages" aria-label="Elige una lámina">
-          <div className="studio-tabs" role="tablist">
-            {collections.map((col, i) => (
-              <button key={col.id} role="tab" aria-selected={i === ci} className={i === ci ? 'on' : ''} onClick={() => { setCi(i); setPi(0); setColor(col.palette[0]) }}>
-                <span>{col.title}</span>
-                <small>{col.pages.length}</small>
-              </button>
-            ))}
-          </div>
-          <p className="studio-count">{c.pages.length} láminas · {c.blurb}</p>
           <div className="studio-thumbs" key={c.id}>
             {c.pages.map((p, i) => (
               <button key={p.path} className={i === pi ? 'on' : ''} onClick={() => setPi(i)} aria-label={p.title}>
@@ -172,12 +306,29 @@ export function Studio({ target }: { target: StudioTarget }) {
         </aside>
 
         <div className="studio-canvas-wrap">
-          <div className={`studio-canvas ${ready ? 'is-ready' : ''}`} onPointerDown={onPointer} role="img" aria-label={`Lámina para colorear: ${page.title}`}>
-            <canvas ref={base} className="layer" />
-            <canvas ref={top} className="layer layer-top" />
-            <img className="layer lines" src={src} alt="" crossOrigin="anonymous" draggable={false} />
+          <div
+            ref={frame}
+            className={`studio-canvas ${ready ? 'is-ready' : ''} ${zoomed ? 'is-zoomed' : ''}`}
+            onPointerDown={onDown}
+            onPointerMove={onMove}
+            onPointerUp={onUp}
+            onPointerCancel={onUp}
+            role="img"
+            aria-label={`Lámina para colorear: ${page.title}`}
+          >
+            <div className="studio-zoom" ref={inner}>
+              <canvas ref={base} className="layer" />
+              <canvas ref={top} className="layer layer-top" />
+              <img className="layer lines" src={src} alt="" crossOrigin="anonymous" draggable={false} />
+            </div>
             {!ready && <div className="studio-loading">Preparando la lámina…</div>}
+            <div className="zoom-ctrl" onPointerDown={(e) => e.stopPropagation()}>
+              <button onClick={() => zoomAt(1 / 1.5)} disabled={!zoomed} aria-label="Alejar">−</button>
+              <button onClick={() => zoomAt(1.5)} aria-label="Acercar">+</button>
+              {zoomed && <button className="zoom-reset" onClick={() => applyView(1, 0, 0)}>Ver entera</button>}
+            </div>
           </div>
+          <p className="studio-hint">Pellizca con dos dedos para acercarte; con la lámina ampliada, arrastra para moverte. Un toque pinta.</p>
           <p className="studio-caption">
             <span>{c.kicker} · {c.title}</span>
             <strong>{page.title}</strong>
