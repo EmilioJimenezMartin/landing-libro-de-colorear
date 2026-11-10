@@ -1,10 +1,10 @@
 import { useLayoutEffect, useRef } from 'react'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
-import { GrainGradient } from '@paper-design/shaders-react'
 import { collections, ritualPages } from '../data'
 import { ColoredPage } from './ColoredPage'
 import { BookCover } from './BookCover'
+import { NightWall } from './NightWall'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -82,14 +82,25 @@ export function Stage({ onCta }: { onCta: (id: string) => void }) {
           },
         })
 
+        // Zoom inmersivo: en escritorio el libro abierto llena la pantalla; en móvil la cámara
+        // se acerca a la página derecha (la que se colorea) y las hojas salen por la izquierda.
+        const bh = () => bw() * 1.3
+        const zoom = () =>
+          desk
+            ? Math.min((window.innerWidth * 0.96) / (2 * bw()), (window.innerHeight * 0.9) / bh())
+            : Math.min((window.innerWidth * 0.94) / bw(), (window.innerHeight * 0.74) / bh())
+        const zoomX = () => (desk ? (bw() * zoom()) / 2 : 0)
+
         tl.to(q('.hero-copy'), { opacity: 0, y: -140, duration: 1 }, 0)
           .to(q('.hero-meta'), { opacity: 0, duration: 0.5 }, 0)
+          .to(q('.night-wall'), { opacity: 0.35, scale: 1.08, duration: 2.6 }, 0)
           .to(pos, { x: 0, y: 0, rotationX: 10, rotationY: -14, rotationZ: 0, scale: 1, duration: 1.4, ease: 'power2.inOut' }, 0)
           .to(pos, { x: () => bw() / 2, rotationX: 0, rotationY: 0, duration: 1.2, ease: 'power2.inOut' }, 1.4)
           .to(leaves[0], { rotationY: -180, duration: 1.2, ease: 'power2.inOut' }, 1.4)
-          .to(words[0], { opacity: 1, yPercent: 0, duration: 0.6 }, 1.5)
+          .to(pos, { scale: zoom, x: zoomX, y: desk ? 0 : '4svh', duration: 1, ease: 'power2.inOut' }, 2.5)
+          .to(words[0], { opacity: 1, yPercent: 0, duration: 0.6 }, 2.6)
 
-        let t = 2.6
+        let t = 3.4
         ritualPages.forEach((_, k) => {
           tl.to(papers[k], { '--p': 1, duration: 1.6 }, t)
           if (k < ritualPages.length - 1) {
@@ -101,7 +112,11 @@ export function Stage({ onCta }: { onCta: (id: string) => void }) {
             t += 1.8
           }
         })
-        tl.to(pos, { scale: 1.05, duration: 1 }, t).to(q('.stage-end'), { opacity: 1, y: 0, duration: 0.6 }, t + 0.2)
+        tl.to(pos, { scale: () => zoom() * 0.86, x: () => zoomX() * 0.86, y: desk ? '-4vh' : '-2svh', duration: 1 }, t).to(
+          q('.stage-end'),
+          { opacity: 1, y: 0, duration: 0.6 },
+          t + 0.2,
+        )
       },
     )
 
@@ -130,17 +145,8 @@ export function Stage({ onCta }: { onCta: (id: string) => void }) {
 
   return (
     <section className="stage" id="libro" ref={root} aria-label="El libro">
-      <div className="stage-bg" aria-hidden>
-        <GrainGradient
-          style={{ width: '100%', height: '100%' }}
-          colorBack="#07060a"
-          colors={['#2b1846', '#0d2b2a', '#3a1d10', '#151026']}
-          softness={0.85}
-          intensity={0.22}
-          noise={0.28}
-          shape="blob"
-          speed={0.35}
-        />
+      <div className="stage-bg">
+        <NightWall />
         <div className="stage-vignette" />
       </div>
 
@@ -172,6 +178,7 @@ export function Stage({ onCta }: { onCta: (id: string) => void }) {
       <div className="hero-meta" aria-hidden>
         <span>{collections.length} colecciones</span>
         <span>{totalPages} láminas</span>
+        <span className="lamp-hint">Mueve el ratón: llevas una linterna</span>
         <span className="scroll-cue">Baja para abrir el libro</span>
       </div>
 

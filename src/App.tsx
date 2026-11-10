@@ -6,6 +6,8 @@ import { Stage } from './components/Stage'
 import { Collections } from './components/Collections'
 import { Studio, type StudioTarget } from './components/Studio'
 import { Footer, FreePages, Hud, Preloader } from './components/Extras'
+import { Lightbox, type ViewerItem } from './components/Lightbox'
+import { collections } from './data'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -13,6 +15,7 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [target, setTarget] = useState<StudioTarget>({ c: 0, p: 0, nonce: 0 })
   const lenis = useRef<Lenis | null>(null)
+  const [viewer, setViewer] = useState<{ items: ViewerItem[]; i: number } | null>(null)
 
   useEffect(() => {
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -55,6 +58,21 @@ export default function App() {
 
   const done = useCallback(() => setLoading(false), [])
 
+  useEffect(() => {
+    if (loading) return
+    document.documentElement.classList.toggle('is-loading', !!viewer)
+    if (viewer) lenis.current?.stop()
+    else lenis.current?.start()
+  }, [viewer, loading])
+
+  const colorFromViewer = useCallback(
+    (it: ViewerItem) => {
+      setViewer(null)
+      colorPage(collections.indexOf(it.c), it.c.pages.indexOf(it.p))
+    },
+    [colorPage],
+  )
+
   return (
     <>
       {loading && <Preloader onDone={done} />}
@@ -63,9 +81,10 @@ export default function App() {
         <Stage onCta={go} />
         <Collections onColor={colorPage} />
         <Studio target={target} />
-        <FreePages />
+        <FreePages onOpen={(items, i) => setViewer({ items, i })} />
       </main>
       <Footer go={go} />
+      {viewer && <Lightbox items={viewer.items} start={viewer.i} onClose={() => setViewer(null)} onColor={colorFromViewer} />}
     </>
   )
 }

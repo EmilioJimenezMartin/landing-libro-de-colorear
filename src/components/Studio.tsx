@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import gsap from 'gsap'
-import { collections, download, img } from '../data'
+import { collections, download, img, LOCAL } from '../data'
 import { autoColors, hexToU32, labelAt, loadImage, paint, segment, type Seg } from '../lib/fill'
 
 const NEUTRALS = ['#16141a', '#4a4550', '#9a93a0', '#ffffff', '#f3ead8', '#c9a27a']
@@ -200,8 +200,8 @@ export function Studio({ target }: { target: StudioTarget }) {
             <button className="btn btn-gold" onClick={magic}>✦ Colorear por mí</button>
             <button className="btn btn-ghost" onClick={undo} disabled={!canUndo}>Deshacer</button>
             <button className="btn btn-ghost" onClick={clear}>Empezar de nuevo</button>
-            <button className="btn btn-ghost" onClick={save}>Descargar PNG</button>
-            <a className="btn btn-ghost" href={download(page.path, `noctinta-${c.id}-${pi + 1}-para-imprimir`)}>Imprimir en papel</a>
+            {!LOCAL && <button className="btn btn-ghost" onClick={save}>Descargar PNG</button>}
+            {!LOCAL && <a className="btn btn-ghost" href={download(page.path, `noctinta-${c.id}-${pi + 1}-para-imprimir`)}>Imprimir en papel</a>}
           </div>
           <a className="studio-amazon" href={c.amazonUrl} target="_blank" rel="noopener">
             ¿Te ha gustado? El libro completo de <b>{c.title}</b> está en Amazon ↗

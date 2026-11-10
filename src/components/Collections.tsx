@@ -10,7 +10,7 @@ export function Collections({ onColor }: { onColor: (c: number, p: number) => vo
 
   useLayoutEffect(() => {
     const mm = gsap.matchMedia()
-    mm.add('(min-width: 860px) and (prefers-reduced-motion: no-preference)', () => {
+    mm.add('(prefers-reduced-motion: no-preference)', () => {
       const t = track.current!
       const dist = () => t.scrollWidth - window.innerWidth
       const tween = gsap.to(t, {

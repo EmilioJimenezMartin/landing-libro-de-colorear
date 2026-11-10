@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
-import { collections, download, img, ritualPages } from '../data'
+import { collections, img, ritualPages } from '../data'
+import type { ViewerItem } from './Lightbox'
 import { loadImage } from '../lib/fill'
 
 /** Pantalla de carga: el libro se dibuja con un trazo y el contador sube con las láminas. */
@@ -88,7 +89,7 @@ export function Hud({ go }: { go: (id: string) => void }) {
   )
 }
 
-export function FreePages() {
+export function FreePages({ onOpen }: { onOpen: (items: ViewerItem[], i: number) => void }) {
   const root = useRef<HTMLElement>(null)
   const picks = collections.filter((c) => c.featured).flatMap((c) => c.pages.slice(4, 6).map((p) => ({ c, p })))
   useLayoutEffect(() => {
@@ -111,13 +112,13 @@ export function FreePages() {
       </div>
       <div className="free-grid">
         {picks.map(({ c, p }, i) => (
-          <a key={p.path} className="free-card" href={download(p.path, `noctinta-${c.id}-gratis-${i + 1}`)} style={{ '--tilt': `${(i % 2 ? 1 : -1) * (1 + (i % 3))}deg` } as React.CSSProperties}>
+          <button key={p.path} className="free-card" onClick={() => onOpen(picks, i)} style={{ '--tilt': `${(i % 2 ? 1 : -1) * (1 + (i % 3))}deg` } as React.CSSProperties}>
             <img src={img(p.path, 500)} alt={`Lámina gratis para colorear: ${p.title}`} loading="lazy" />
             <span>
               <b>{p.title}</b>
-              <small>{c.kicker} · Descargar ↓</small>
+              <small>{c.kicker} · Ver lámina</small>
             </span>
-          </a>
+          </button>
         ))}
       </div>
     </section>
