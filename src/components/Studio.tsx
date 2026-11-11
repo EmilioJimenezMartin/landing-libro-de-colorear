@@ -37,12 +37,12 @@ export function Studio({ target }: { target: StudioTarget }) {
   const inner = useRef<HTMLDivElement>(null)
   const view = useRef({ s: 1, x: 0, y: 0 })
   const [zoomed, setZoomed] = useState(false)
-  const [tool, setTool] = useState<'fill' | 'brush'>('fill')
+  const [tool, setTool] = useState<'fill' | 'brush' | 'erase'>('fill')
   const [size, setSize] = useState(2)
   const [touched, setTouched] = useState(false)
   const brush = useRef<HTMLCanvasElement>(null)
   const cursor = useRef<HTMLDivElement>(null)
-  const stroke = useRef<{ id: number; last: { x: number; y: number }; snap: ImageData } | null>(null)
+  const stroke = useRef<{ id: number; last: { x: number; y: number }; snap: ImageData; start: { cx: number; cy: number }; moved: number } | null>(null)
   const pointers = useRef(new Map<number, { x: number; y: number }>())
   const gesture = useRef<{
     tap: { x: number; y: number; t: number; moved: boolean } | null
@@ -178,10 +178,11 @@ export function Studio({ target }: { target: StudioTarget }) {
   }
   const dab = (from: { x: number; y: number }, to: { x: number; y: number }) => {
     const ctx = brush.current!.getContext('2d')!
-    ctx.globalCompositeOperation = 'source-over'
-    ctx.strokeStyle = color
-    ctx.fillStyle = color
-    ctx.globalAlpha = 0.92
+    const erasing = tool === 'erase'
+    ctx.globalCompositeOperation = erasing ? 'destination-out' : 'source-over'
+    ctx.strokeStyle = erasing ? '#000' : color
+    ctx.fillStyle = ctx.strokeStyle
+    ctx.globalAlpha = erasing ? 1 : 0.92
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
     ctx.lineWidth = BRUSH_PX[size - 1] * 2
@@ -190,12 +191,25 @@ export function Studio({ target }: { target: StudioTarget }) {
     ctx.lineTo(to.x, to.y)
     ctx.stroke()
     ctx.globalAlpha = 1
+    ctx.globalCompositeOperation = 'source-over'
+  }
+  const eraseFillAt = (clientX: number, clientY: number) => {
+    const sg = seg.current
+    if (!sg) return
+    const r = inner.current!.getBoundingClientRect()
+    const x = ((clientX - r.left) / r.width) * sg.w
+    const y = ((clientY - r.top) / r.height) * sg.h
+    const l = labelAt(sg, x, y)
+    if (l < 0 || colors.current[l] === 0) return
+    const next = colors.current.slice()
+    next[l] = 0
+    commit(next, x, y)
   }
   const startStroke = (e: React.PointerEvent) => {
     const b = brush.current!
     const ctx = b.getContext('2d')!
     const p = toBrush(e.clientX, e.clientY)
-    stroke.current = { id: e.pointerId, last: p, snap: ctx.getImageData(0, 0, b.width, b.height) }
+    stroke.current = { id: e.pointerId, last: p, snap: ctx.getImageData(0, 0, b.width, b.height), start: { cx: e.clientX, cy: e.clientY }, moved: 0 }
     dab(p, { x: p.x + 0.01, y: p.y })
   }
   const endStroke = (keep: boolean) => {
@@ -206,6 +220,8 @@ export function Studio({ target }: { target: StudioTarget }) {
       history.current.push({ kind: 'brush', data: st.snap })
       if (history.current.length > 40) history.current.shift()
       setCanUndo(true)
+      // La goma con un toque (sin arrastrar) también vacía el relleno de esa zona.
+      if (tool === 'erase' && st.moved < 6) eraseFillAt(st.start.cx, st.start.cy)
     } else {
       brush.current!.getContext('2d')!.putImageData(st.snap, 0, 0)
     }
@@ -238,7 +254,7 @@ export function Studio({ target }: { target: StudioTarget }) {
     const g = gesture.current
     const { s, x, y } = view.current
     setTouched(true)
-    if (pointers.current.size === 1 && tool === 'brush' && ready) {
+    if (pointers.current.size === 1 && tool !== 'fill' && ready) {
       g.tap = null
       g.pan = null
       g.pinch = null
@@ -260,10 +276,11 @@ export function Studio({ target }: { target: StudioTarget }) {
   }
 
   const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (tool === 'brush') moveCursor(e)
+    if (tool !== 'fill') moveCursor(e)
     if (!pointers.current.has(e.pointerId)) return
     const st = stroke.current
     if (st && st.id === e.pointerId) {
+      st.moved = Math.max(st.moved, Math.hypot(e.clientX - st.start.cx, e.clientY - st.start.cy))
       const p = toBrush(e.clientX, e.clientY)
       dab(st.last, p)
       st.last = p
@@ -431,11 +448,11 @@ export function Studio({ target }: { target: StudioTarget }) {
               <img className="layer lines" src={src} alt="" crossOrigin="anonymous" draggable={false} />
             </div>
             {!ready && <div className="studio-loading">Preparando la lámina…</div>}
-            {tool === 'brush' && <div className="brush-cursor" ref={cursor} aria-hidden />}
+            {tool !== 'fill' && <div className={`brush-cursor ${tool === 'erase' ? 'is-eraser' : ''}`} ref={cursor} aria-hidden />}
             {ready && !touched && (
               <div className="paint-hint" aria-hidden>
                 <span className="paint-hint-dot" style={{ background: color }} />
-                <span className="paint-hint-text">{tool === 'fill' ? 'Toca una zona para rellenarla' : 'Arrastra para pintar a mano'}</span>
+                <span className="paint-hint-text">{tool === 'fill' ? 'Toca una zona para rellenarla' : tool === 'brush' ? 'Arrastra para pintar a mano' : 'Arrastra para borrar o toca una zona para vaciarla'}</span>
               </div>
             )}
             <div className="zoom-ctrl" onPointerDown={(e) => e.stopPropagation()}>
@@ -447,7 +464,9 @@ export function Studio({ target }: { target: StudioTarget }) {
           <p className="studio-hint">
             {tool === 'fill'
               ? 'Un toque rellena la zona. Pellizca con dos dedos para acercarte y, ampliada, arrastra para moverte.'
-              : 'Arrastra el dedo o el ratón apretado para pintar. Con dos dedos haces zoom.'}
+              : tool === 'brush'
+                ? 'Arrastra el dedo o el ratón apretado para pintar. Con dos dedos haces zoom.'
+                : 'Arrastra para borrar lo pintado a mano; un toque vacía el relleno de una zona.'}
           </p>
           <p className="studio-caption">
             <span>{c.kicker} · {c.title}</span>
@@ -463,14 +482,18 @@ export function Studio({ target }: { target: StudioTarget }) {
             </button>
             <button role="radio" aria-checked={tool === 'brush'} className={tool === 'brush' ? 'on' : ''} onClick={() => setTool('brush')}>
               <svg viewBox="0 0 24 24" aria-hidden><path d="M14 4 20 10 11 19 5 13z" /><path d="M5 13c-2 1-2 4-3 6 2-1 5-1 6-3" /></svg>
-              Pintar a mano
+              Pincel
+            </button>
+            <button role="radio" aria-checked={tool === 'erase'} className={tool === 'erase' ? 'on' : ''} onClick={() => setTool('erase')}>
+              <svg viewBox="0 0 24 24" aria-hidden><path d="M8 20h12" /><path d="M4.5 15.5 13 7l6 6-6.5 6.5H8.5z" /><path d="m9 11.5 6 6" /></svg>
+              Goma
             </button>
           </div>
-          {tool === 'brush' && (
-            <div className="brush-sizes" role="radiogroup" aria-label="Grosor del pincel">
+          {tool !== 'fill' && (
+            <div className="brush-sizes" role="radiogroup" aria-label={tool === 'erase' ? 'Grosor de la goma' : 'Grosor del pincel'}>
               {[1, 2, 3].map((n) => (
                 <button key={n} role="radio" aria-checked={size === n} className={size === n ? 'on' : ''} onClick={() => setSize(n)} aria-label={['Fino', 'Medio', 'Grueso'][n - 1]}>
-                  <i style={{ width: 6 + n * 6, height: 6 + n * 6, background: color }} />
+                  <i style={{ width: 6 + n * 6, height: 6 + n * 6, background: tool === 'erase' ? 'transparent' : color, boxShadow: tool === 'erase' ? 'inset 0 0 0 1.5px var(--cream)' : undefined }} />
                 </button>
               ))}
             </div>
@@ -487,11 +510,11 @@ export function Studio({ target }: { target: StudioTarget }) {
             <i /> <span>{color.toUpperCase()}</span>
           </div>
           <div className="tool-btns">
-            <button className="btn btn-gold" onClick={magic}>✦ Colorear por mí</button>
-            <button className="btn btn-ghost" onClick={undo} disabled={!canUndo}>Deshacer</button>
-            <button className="btn btn-ghost" onClick={clear}>Empezar de nuevo</button>
-            {!LOCAL && <button className="btn btn-ghost" onClick={save}>Descargar PNG</button>}
-            {!LOCAL && <a className="btn btn-ghost" href={download(page.path, `noctinta-${c.id}-${pi + 1}-para-imprimir`)}>Imprimir en papel</a>}
+            <button className="btn btn-gold btn-wide" onClick={magic}>Colorear por mí</button>
+            <button className="tool-btn" onClick={undo} disabled={!canUndo}>Deshacer</button>
+            <button className="tool-btn" onClick={clear}>Empezar de nuevo</button>
+            {!LOCAL && <button className="tool-btn" onClick={save}>Descargar PNG</button>}
+            {!LOCAL && <a className="tool-btn" href={download(page.path, `noctinta-${c.id}-${pi + 1}-para-imprimir`)}>Imprimir en papel</a>}
           </div>
           <a className="studio-amazon" href={c.amazonUrl} target="_blank" rel="noopener">
             ¿Te ha gustado? El libro completo de <b>{c.title}</b> está en Amazon ↗
