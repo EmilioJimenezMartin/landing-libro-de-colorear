@@ -5,6 +5,7 @@ import { collections, ritualPages } from '../data'
 import { ColoredPage } from './ColoredPage'
 import { BookCover } from './BookCover'
 import { NightWall } from './NightWall'
+import { onSwipe, stopsController } from '../lib/scroll'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -77,10 +78,12 @@ export function Stage({ onCta }: { onCta: (id: string) => void }) {
             start: 'top top',
             end: () => `+=${window.innerHeight * 9}`,
             pin: true,
-            scrub: 1,
+            scrub: 1.1,
             invalidateOnRefresh: true,
+            refreshPriority: 2,
           },
         })
+        tl.addLabel('portada', 0)
 
         // Zoom inmersivo: en escritorio el libro abierto llena la pantalla; en móvil la cámara
         // se acerca a la página derecha (la que se colorea) y las hojas salen por la izquierda.
@@ -100,9 +103,11 @@ export function Stage({ onCta }: { onCta: (id: string) => void }) {
           .to(pos, { scale: zoom, x: zoomX, y: desk ? 0 : '4svh', duration: 1, ease: 'power2.inOut' }, 2.5)
           .to(words[0], { opacity: 1, yPercent: 0, duration: 0.6 }, 2.6)
 
+        tl.addLabel('abierto', 3.4)
         let t = 3.4
         ritualPages.forEach((_, k) => {
           tl.to(papers[k], { '--p': 1, duration: 1.6 }, t)
+          tl.addLabel(`pagina-${k + 1}`, t + 1.6)
           if (k < ritualPages.length - 1) {
             tl.to(leaves[k + 1], { rotationY: -180, duration: 1, ease: 'power2.inOut' }, t + 1.8)
             tl.to(words[k], { opacity: 0, yPercent: -30, duration: 0.4 }, t + 1.8)
@@ -117,6 +122,27 @@ export function Stage({ onCta }: { onCta: (id: string) => void }) {
           { opacity: 1, y: 0, duration: 0.6 },
           t + 0.2,
         )
+        tl.addLabel('fin', t + 1)
+
+        // Paradas: portada, libro abierto, cada página pintada y final. El scroll se asienta en
+        // ellas y deslizar a izquierda/derecha (dedo o ratón) pasa a la siguiente o la anterior.
+        const st = tl.scrollTrigger!
+        const ctl = stopsController(st, () => Object.values(tl.labels).sort((a, b) => a - b).map((v) => v / tl.duration()), 1.1)
+        const step = (dir: 1 | -1) => {
+          if (st.isActive || (dir === 1 && st.progress === 0)) ctl.step(dir)
+        }
+        const offSwipe = onSwipe(el, step)
+        const key = (e: KeyboardEvent) => {
+          if (!tl.scrollTrigger!.isActive) return
+          if (e.key === 'ArrowRight') step(1)
+          if (e.key === 'ArrowLeft') step(-1)
+        }
+        window.addEventListener('keydown', key)
+        return () => {
+          offSwipe()
+          ctl.kill()
+          window.removeEventListener('keydown', key)
+        }
       },
     )
 

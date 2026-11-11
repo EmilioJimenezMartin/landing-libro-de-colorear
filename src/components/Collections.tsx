@@ -3,6 +3,7 @@ import gsap from 'gsap'
 import { collections } from '../data'
 import { BookCover } from './BookCover'
 import { ColoredPage } from './ColoredPage'
+import { onSwipe, stopsController } from '../lib/scroll'
 
 export function Collections({ onColor }: { onColor: (c: number, p: number) => void }) {
   const root = useRef<HTMLElement>(null)
@@ -13,10 +14,30 @@ export function Collections({ onColor }: { onColor: (c: number, p: number) => vo
     mm.add('(prefers-reduced-motion: no-preference)', () => {
       const t = track.current!
       const dist = () => t.scrollWidth - window.innerWidth
+      // paradas: cada libro centrado en pantalla (más la intro y el final)
+      const stops = () => {
+        const d = dist()
+        const items = [...t.children] as HTMLElement[]
+        const pts = items.map((it) => Math.min(d, Math.max(0, it.offsetLeft - (window.innerWidth - it.offsetWidth) / 2)) / d)
+        return [...new Set([0, ...pts, 1].map((v) => Math.round(v * 1000) / 1000))].sort((a, b) => a - b)
+      }
       const tween = gsap.to(t, {
         x: () => -dist(),
         ease: 'none',
-        scrollTrigger: { trigger: root.current, start: 'top top', end: () => `+=${dist()}`, pin: true, scrub: 1, invalidateOnRefresh: true },
+        scrollTrigger: {
+          trigger: root.current,
+          start: 'top top',
+          end: () => `+=${dist()}`,
+          pin: true,
+          scrub: 1.1,
+          invalidateOnRefresh: true,
+          refreshPriority: 1,
+        },
+      })
+      const st = tween.scrollTrigger!
+      const ctl = stopsController(st, stops, 0.9)
+      const offSwipe = onSwipe(root.current!, (dir) => {
+        if (st.isActive) ctl.step(dir)
       })
       gsap.utils.toArray<HTMLElement>('.col-book', t).forEach((b) => {
         gsap.fromTo(
@@ -25,6 +46,10 @@ export function Collections({ onColor }: { onColor: (c: number, p: number) => vo
           { rotationY: 18, rotationX: -4, ease: 'none', scrollTrigger: { trigger: b, containerAnimation: tween, start: 'left right', end: 'right left', scrub: true } },
         )
       })
+      return () => {
+        offSwipe()
+        ctl.kill()
+      }
     })
     return () => mm.revert()
   }, [])
