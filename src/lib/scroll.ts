@@ -81,8 +81,11 @@ export function stopsController(st: ScrollTrigger, stops: () => number[], durati
     const next = st.direction === 1 ? pts.find((v) => v > p) : [...pts].reverse().find((v) => v < p)
     if (next !== undefined) go(next)
   }
-  ScrollTrigger.addEventListener('scrollEnd', settle)
-  return { step, kill: () => ScrollTrigger.removeEventListener('scrollEnd', settle) }
+  // Solo en pantallas táctiles: con la rueda suavizada de Lenis en el ordenador, asentar al
+  // parar peleaba con el scroll y provocaba parpadeos.
+  const touch = window.matchMedia('(pointer: coarse)').matches
+  if (touch) ScrollTrigger.addEventListener('scrollEnd', settle)
+  return { step, kill: () => touch && ScrollTrigger.removeEventListener('scrollEnd', settle) }
 }
 
 /**
@@ -101,23 +104,10 @@ export function touchPager(
   let sx = 0
   let sy = 0
   let on = false
+  let fired = false
   const inside = () => window.scrollY >= st.start - 4 && window.scrollY <= st.end + 4
-  const start = (e: TouchEvent) => {
-    on = e.touches.length === 1 && inside() && !(e.target as HTMLElement).closest?.('.lb')
-    if (!on) return
-    sx = e.touches[0].clientX
-    sy = e.touches[0].clientY
-  }
-  const move = (e: TouchEvent) => {
-    if (on && e.cancelable) e.preventDefault()
-  }
-  const end = (e: TouchEvent) => {
-    if (!on) return
-    on = false
-    const dx = e.changedTouches[0].clientX - sx
-    const dy = e.changedTouches[0].clientY - sy
-    const big = Math.max(Math.abs(dx), Math.abs(dy))
-    if (big < 28) return
+  const fire = (dx: number, dy: number) => {
+    fired = true
     const dir: 1 | -1 = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 1 : -1) : dy < 0 ? 1 : -1
     if (dir === 1 && isLast()) {
       markBusy(1)
@@ -133,12 +123,50 @@ export function touchPager(
     }
     step(dir)
   }
+  // El paso se dispara en cuanto el gesto tiene dirección clara, sin esperar a soltar el dedo:
+  // así funciona aunque la app que muestra la web (p. ej. el visor de artefactos) cancele el toque.
+  const decide = (x: number, y: number, final: boolean) => {
+    if (!on || fired) return
+    const dx = x - sx
+    const dy = y - sy
+    const h = Math.abs(dx) > Math.abs(dy)
+    if ((h && Math.abs(dx) > 26) || (!h && Math.abs(dy) > 34) || (final && Math.max(Math.abs(dx), Math.abs(dy)) > 14)) fire(dx, dy)
+  }
+  let lx = 0
+  let ly = 0
+  const start = (e: TouchEvent) => {
+    on = e.touches.length === 1 && inside() && !(e.target as HTMLElement).closest?.('.lb')
+    fired = false
+    if (!on) return
+    sx = lx = e.touches[0].clientX
+    sy = ly = e.touches[0].clientY
+  }
+  const move = (e: TouchEvent) => {
+    if (!on) return
+    if (e.cancelable) e.preventDefault()
+    lx = e.touches[0].clientX
+    ly = e.touches[0].clientY
+    decide(lx, ly, false)
+  }
+  const end = (e: TouchEvent) => {
+    if (!on) return
+    const t = e.changedTouches[0]
+    decide(t ? t.clientX : lx, t ? t.clientY : ly, true)
+    on = false
+  }
+  const cancel = () => {
+    if (!on) return
+    decide(lx, ly, true)
+    on = false
+  }
   window.addEventListener('touchstart', start, { passive: true })
   window.addEventListener('touchmove', move, { passive: false })
   window.addEventListener('touchend', end, { passive: true })
+  window.addEventListener('touchcancel', cancel, { passive: true })
   return () => {
     window.removeEventListener('touchstart', start)
     window.removeEventListener('touchmove', move)
     window.removeEventListener('touchend', end)
+    window.removeEventListener('touchcancel', cancel)
   }
 }
