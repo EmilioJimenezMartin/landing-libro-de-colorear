@@ -136,7 +136,10 @@ export function Stage({ onCta }: { onCta: (id: string) => void }) {
         const coarse = window.matchMedia('(pointer: coarse)').matches
         const stopsList = () => Object.values(tl.labels).sort((a, b) => a - b).map((v) => v / tl.duration())
         const offPager = coarse
-          ? touchPager(st, (d) => ctl.step(d), () => st.progress > stopsList().at(-2)! + 0.01, () => st.progress < 0.01)
+          ? touchPager(st, (d) => ctl.step(d), () => st.progress > stopsList().at(-2)! + 0.01, () => st.progress < 0.01, {
+              // al salir del libro se llega directo a la estantería, sin inercia de por medio
+              next: () => ScrollTrigger.getAll().find((s) => s.trigger?.id === 'colecciones')?.start ?? st.end + 2,
+            })
           : () => {}
         const offSwipe = coarse ? () => {} : onSwipe(el, step)
         const key = (e: KeyboardEvent) => {

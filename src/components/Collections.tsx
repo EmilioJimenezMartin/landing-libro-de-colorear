@@ -1,17 +1,20 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import gsap from 'gsap'
+import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { collections } from '../data'
 import { BookCover } from './BookCover'
 import { ColoredPage } from './ColoredPage'
-import { onSwipe, stopsController } from '../lib/scroll'
+import { onSwipe, scrollToY, stopsController, touchPager } from '../lib/scroll'
 
 export function Collections({ onColor }: { onColor: (c: number, p: number) => void }) {
   const root = useRef<HTMLElement>(null)
   const track = useRef<HTMLDivElement>(null)
+  const [active, setActive] = useState(0)
+  const goToRef = useRef<(i: number) => void>(() => {})
 
   useLayoutEffect(() => {
     const mm = gsap.matchMedia()
-    mm.add('(min-width: 860px) and (prefers-reduced-motion: no-preference)', () => {
+    mm.add('(prefers-reduced-motion: no-preference)', () => {
       const t = track.current!
       const dist = () => t.scrollWidth - window.innerWidth
       // paradas: cada libro centrado en pantalla (más la intro y el final)
@@ -36,9 +39,37 @@ export function Collections({ onColor }: { onColor: (c: number, p: number) => vo
       })
       const st = tween.scrollTrigger!
       const ctl = stopsController(st, stops, 0.9)
-      const offSwipe = onSwipe(root.current!, (dir) => {
-        if (st.isActive) ctl.step(dir)
-      })
+      // Táctil: cada gesto (vertical u horizontal) pasa exactamente un libro.
+      const coarse = window.matchMedia('(pointer: coarse)').matches
+      const offPager = coarse
+        ? touchPager(st, (d) => ctl.step(d), () => st.progress > 0.995, () => st.progress < 0.005, {
+            // hacia atrás se vuelve a la última página del libro
+            prev: () => ScrollTrigger.getAll().find((s) => s.trigger?.id === 'libro')?.end ?? st.start - 2,
+          })
+        : () => {}
+      const offSwipe = coarse
+        ? () => {}
+        : onSwipe(root.current!, (dir) => {
+            if (st.isActive) ctl.step(dir)
+          })
+      // puntos: qué ficha está centrada
+      const itemStops = () => {
+        const d = dist()
+        return ([...t.children] as HTMLElement[]).map((it) => Math.min(d, Math.max(0, it.offsetLeft - (window.innerWidth - it.offsetWidth) / 2)) / d)
+      }
+      const syncDots = () => {
+        const pts = itemStops()
+        let best = 0
+        pts.forEach((v, i) => {
+          if (Math.abs(v - st.progress) < Math.abs(pts[best] - st.progress)) best = i
+        })
+        setActive(best)
+      }
+      tween.eventCallback('onUpdate', syncDots)
+      goToRef.current = (i: number) => {
+        const v = itemStops()[i]
+        if (v !== undefined) scrollToY(st.start + v * (st.end - st.start), 0.9)
+      }
       gsap.utils.toArray<HTMLElement>('.col-book', t).forEach((b) => {
         gsap.fromTo(
           b,
@@ -48,53 +79,14 @@ export function Collections({ onColor }: { onColor: (c: number, p: number) => vo
       })
       return () => {
         offSwipe()
+        offPager()
         ctl.kill()
-      }
-    })
-    // Móvil: carrusel nativo con imán (scroll-snap). Los libros giran según su posición y los
-    // puntos indican cuál se ve.
-    mm.add('(max-width: 859px)', () => {
-      const t = track.current!
-      const books = [...t.querySelectorAll<HTMLElement>('.col-book')]
-      const items = [...t.children] as HTMLElement[]
-      let raf = 0
-      const update = () => {
-        raf = 0
-        const mid = t.scrollLeft + t.clientWidth / 2
-        let best = 0
-        let bestD = Infinity
-        items.forEach((it, i) => {
-          const d = Math.abs(it.offsetLeft + it.offsetWidth / 2 - mid)
-          if (d < bestD) {
-            bestD = d
-            best = i
-          }
-        })
-        setActive(best)
-        books.forEach((b) => {
-          const panel = b.closest('.col-panel') as HTMLElement
-          const off = (panel.offsetLeft + panel.offsetWidth / 2 - mid) / t.clientWidth
-          b.style.transform = `rotateY(${-22 + off * -40}deg) rotateX(6deg)`
-        })
-      }
-      const onScroll = () => {
-        if (!raf) raf = requestAnimationFrame(update)
-      }
-      update()
-      t.addEventListener('scroll', onScroll, { passive: true })
-      return () => {
-        t.removeEventListener('scroll', onScroll)
-        books.forEach((b) => (b.style.transform = ''))
       }
     })
     return () => mm.revert()
   }, [])
 
-  const [active, setActive] = useState(0)
-  const goTo = (i: number) => {
-    const it = track.current!.children[i] as HTMLElement | undefined
-    if (it) track.current!.scrollTo({ left: it.offsetLeft - (track.current!.clientWidth - it.offsetWidth) / 2, behavior: 'smooth' })
-  }
+  const goTo = (i: number) => goToRef.current(i)
 
   return (
     <section className="collections" id="colecciones" ref={root} aria-label="Colecciones">
@@ -165,7 +157,7 @@ export function Collections({ onColor }: { onColor: (c: number, p: number) => vo
         {Array.from({ length: (track.current?.children.length ?? collections.filter((c) => c.featured).length + 2) }).map((_, i) => (
           <button key={i} className={i === active ? 'on' : ''} onClick={() => goTo(i)} aria-label={`Ir a la ficha ${i + 1}`} />
         ))}
-        <span>Desliza</span>
+        <span>Desliza o baja</span>
       </div>
     </section>
   )

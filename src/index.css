@@ -1993,44 +1993,20 @@ button.free-card {
   }
 }
 
-/* ---------- estantería en móvil: carrusel nativo con imán ---------- */
+/* ---------- estantería en móvil: puntos de posición ---------- */
 .col-dots {
   display: none;
 }
 @media (max-width: 859px) {
   .collections {
-    touch-action: auto;
-    padding-bottom: 28px;
-  }
-  .col-track {
-    width: auto;
-    height: auto;
-    min-height: 0;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    scroll-snap-type: x mandatory;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    padding: 80px 8vw 24px;
-    gap: 6vw;
-    align-items: center;
-  }
-  .col-track::-webkit-scrollbar {
-    display: none;
-  }
-  .col-intro,
-  .col-panel,
-  .col-outro {
-    scroll-snap-align: center;
-    scroll-snap-stop: always;
-  }
-  .col-intro {
-    width: 84vw;
-  }
-  .col-book {
-    transition: transform 0.15s linear;
+    position: relative;
   }
   .col-dots {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 34px;
+    z-index: 2;
     display: flex;
     justify-content: center;
     align-items: center;

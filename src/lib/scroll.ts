@@ -90,11 +90,18 @@ export function stopsController(st: ScrollTrigger, stops: () => number[], durati
  * del dedo (vertical u horizontal) avanza o retrocede exactamente una parada, sin inercia que
  * se salte páginas. En la última parada, seguir hacia delante suelta la sección.
  */
-export function touchPager(st: ScrollTrigger, step: (dir: 1 | -1) => void, isLast: () => boolean, isFirst: () => boolean) {
+export function touchPager(
+  st: ScrollTrigger,
+  step: (dir: 1 | -1) => void,
+  isLast: () => boolean,
+  isFirst: () => boolean,
+  /** a dónde ir al salir hacia delante / hacia atrás (por defecto, justo fuera de la sección) */
+  exits: { next?: () => number; prev?: () => number } = {},
+) {
   let sx = 0
   let sy = 0
   let on = false
-  const inside = () => window.scrollY < st.end - 4
+  const inside = () => window.scrollY >= st.start - 4 && window.scrollY <= st.end + 4
   const start = (e: TouchEvent) => {
     on = e.touches.length === 1 && inside() && !(e.target as HTMLElement).closest?.('.lb')
     if (!on) return
@@ -113,11 +120,17 @@ export function touchPager(st: ScrollTrigger, step: (dir: 1 | -1) => void, isLas
     if (big < 28) return
     const dir: 1 | -1 = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 1 : -1) : dy < 0 ? 1 : -1
     if (dir === 1 && isLast()) {
-      markBusy(0.8)
-      scrollToY(st.end + 2, 0.8)
+      markBusy(1)
+      scrollToY(exits.next ? exits.next() : st.end + 8, 1)
       return
     }
-    if (dir === -1 && isFirst()) return
+    if (dir === -1 && isFirst()) {
+      if (st.start > 4) {
+        markBusy(1)
+        scrollToY(exits.prev ? exits.prev() : st.start - 8, 1)
+      }
+      return
+    }
     step(dir)
   }
   window.addEventListener('touchstart', start, { passive: true })
