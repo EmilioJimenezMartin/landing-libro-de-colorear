@@ -136,6 +136,9 @@ export function Stage({ onCta }: { onCta: (id: string) => void }) {
         const offPager = touchPager(st, (d) => ctl.step(d), () => st.progress > stopsList().at(-2)! + 0.01, () => st.progress < 0.01, {
               // al salir del libro se llega directo a la estantería, sin inercia de por medio
               next: () => ScrollTrigger.getAll().find((s) => s.trigger?.id === 'colecciones')?.start ?? st.end + 2,
+              catcher: el.querySelector<HTMLElement>('.swipe-catcher'),
+              prevBtn: el.querySelector<HTMLElement>('.page-nav .pn-prev'),
+              nextBtn: el.querySelector<HTMLElement>('.page-nav .pn-next'),
             })
         const offSwipe = () => {}
         const key = (e: KeyboardEvent) => {
@@ -234,6 +237,15 @@ export function Stage({ onCta }: { onCta: (id: string) => void }) {
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="swipe-catcher" aria-hidden>
+        <div />
+      </div>
+      <div className="page-nav">
+        <button className="pn-prev" aria-label="Página anterior">‹</button>
+        <span>Desliza o toca</span>
+        <button className="pn-next" aria-label="Página siguiente">›</button>
       </div>
 
       <div className="stage-end">

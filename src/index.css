@@ -2040,3 +2040,84 @@ button.free-card {
   user-select: none;
   -webkit-user-select: none;
 }
+
+/* ---------- móvil: capa nativa de deslizamiento lateral y flechas de respaldo ---------- */
+.swipe-catcher,
+.page-nav,
+.col-dots .pn-prev,
+.col-dots .pn-next {
+  display: none;
+}
+.hero-copy,
+.hero-meta,
+.stage-end {
+  z-index: 6;
+}
+@media (pointer: coarse) {
+  .swipe-catcher {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .swipe-catcher::-webkit-scrollbar {
+    display: none;
+  }
+  .swipe-catcher > div {
+    width: 300%;
+    height: 100%;
+  }
+  .col-catcher {
+    bottom: auto;
+    height: 46%;
+  }
+  .page-nav {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+    z-index: 6;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 14px;
+  }
+  .page-nav span {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .page-nav button,
+  .col-dots .pn-prev,
+  .col-dots .pn-next {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border-radius: 50%;
+    background: rgba(7, 6, 10, 0.72);
+    color: var(--gold);
+    font-size: 24px;
+    line-height: 1;
+    box-shadow: inset 0 0 0 1px rgba(216, 180, 106, 0.5);
+  }
+  .stage-end {
+    bottom: calc(130px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* CTA hacia fuera (Amazon): la plumilla apunta en diagonal */
+.btn-gold.btn-out::after {
+  transform: rotate(-35deg);
+}
+.btn-gold.btn-out:hover::after {
+  transform: rotate(-35deg) translate(4px, 0);
+}

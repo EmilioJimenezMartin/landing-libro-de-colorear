@@ -99,7 +99,15 @@ export function touchPager(
   isLast: () => boolean,
   isFirst: () => boolean,
   /** a dónde ir al salir hacia delante / hacia atrás (por defecto, justo fuera de la sección) */
-  exits: { next?: () => number; prev?: () => number } = {},
+  exits: {
+    next?: () => number
+    prev?: () => number
+    /** capa con scroll horizontal nativo que recoge el deslizamiento lateral en móviles/apps */
+    catcher?: HTMLElement | null
+    /** botones de respaldo para pasar página */
+    prevBtn?: HTMLElement | null
+    nextBtn?: HTMLElement | null
+  } = {},
 ) {
   let sx = 0
   let sy = 0
@@ -135,27 +143,37 @@ export function touchPager(
   let lx = 0
   let ly = 0
   const start = (e: TouchEvent) => {
-    on = e.touches.length === 1 && inside() && !(e.target as HTMLElement).closest?.('.lb')
+    on = e.touches.length === 1 && inside() && !(e.target as HTMLElement).closest?.('.lb, button, a')
     fired = false
+    nativeH = false
     if (!on) return
     sx = lx = e.touches[0].clientX
     sy = ly = e.touches[0].clientY
   }
+  let nativeH = false
   const move = (e: TouchEvent) => {
     if (!on) return
-    if (e.cancelable) e.preventDefault()
     lx = e.touches[0].clientX
     ly = e.touches[0].clientY
+    const dx = lx - sx
+    const dy = ly - sy
+    // Deslizamiento lateral sobre la capa nativa: lo gestiona su propio scroll (más fiable dentro
+    // de apps como el visor de artefactos, que se quedan los gestos laterales de la página).
+    if (!nativeH && catcher && catcher.contains(e.target as Node) && Math.abs(dx) >= Math.abs(dy)) nativeH = true
+    if (nativeH) return
+    if (e.cancelable) e.preventDefault()
     decide(lx, ly, false)
   }
   const end = (e: TouchEvent) => {
     if (!on) return
+    if (nativeH) return void (on = false)
     const t = e.changedTouches[0]
     decide(t ? t.clientX : lx, t ? t.clientY : ly, true)
     on = false
   }
   const cancel = () => {
     if (!on) return
+    if (nativeH) return void (on = false)
     decide(lx, ly, true)
     on = false
   }
@@ -179,6 +197,34 @@ export function touchPager(
   }
   const mUp = () => (dragging = false)
 
+  // ---- capa nativa de deslizamiento lateral ----
+  const catcher = exits.catcher ?? null
+  let cLock = 0
+  const mid = () => (catcher ? (catcher.scrollWidth - catcher.clientWidth) / 2 : 0)
+  const recenter = () => {
+    if (!catcher) return
+    catcher.style.overflowX = 'hidden' // corta la inercia
+    catcher.scrollLeft = mid()
+    setTimeout(() => (catcher.style.overflowX = 'auto'), 60)
+  }
+  const onCatch = () => {
+    if (!catcher || performance.now() < cLock) return
+    const d = catcher.scrollLeft - mid()
+    if (Math.abs(d) < 30) return
+    cLock = performance.now() + 750
+    fire(-d, 0)
+    setTimeout(recenter, 380)
+  }
+  if (catcher) {
+    recenter()
+    catcher.addEventListener('scroll', onCatch, { passive: true })
+    window.addEventListener('resize', recenter)
+  }
+  const prev = () => fire(1, 0)
+  const next = () => fire(-1, 0)
+  exits.prevBtn?.addEventListener('click', prev)
+  exits.nextBtn?.addEventListener('click', next)
+
   window.addEventListener('touchstart', start, { passive: true })
   window.addEventListener('touchmove', move, { passive: false })
   window.addEventListener('touchend', end, { passive: true })
@@ -187,6 +233,10 @@ export function touchPager(
   window.addEventListener('pointermove', mMove)
   window.addEventListener('pointerup', mUp)
   return () => {
+    catcher?.removeEventListener('scroll', onCatch)
+    window.removeEventListener('resize', recenter)
+    exits.prevBtn?.removeEventListener('click', prev)
+    exits.nextBtn?.removeEventListener('click', next)
     window.removeEventListener('touchstart', start)
     window.removeEventListener('touchmove', move)
     window.removeEventListener('touchend', end)

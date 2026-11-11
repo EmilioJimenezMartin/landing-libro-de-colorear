@@ -43,6 +43,9 @@ export function Collections({ onColor }: { onColor: (c: number, p: number) => vo
       const offPager = touchPager(st, (d) => ctl.step(d), () => st.progress > 0.995, () => st.progress < 0.005, {
         // hacia atrás se vuelve a la última página del libro
         prev: () => ScrollTrigger.getAll().find((s) => s.trigger?.id === 'libro')?.end ?? st.start - 2,
+        catcher: root.current!.querySelector<HTMLElement>('.swipe-catcher'),
+        prevBtn: root.current!.querySelector<HTMLElement>('.col-dots .pn-prev'),
+        nextBtn: root.current!.querySelector<HTMLElement>('.col-dots .pn-next'),
       })
       const offSwipe = () => {}
       // puntos: qué ficha está centrada
@@ -130,8 +133,8 @@ export function Collections({ onColor }: { onColor: (c: number, p: number) => vo
                 ))}
               </div>
               <div className="col-ctas">
-                <a className="btn btn-gold" href={c.amazonUrl} target="_blank" rel="noopener">
-                  Conseguir en Amazon ↗
+                <a className="btn btn-gold btn-out" href={c.amazonUrl} target="_blank" rel="noopener">
+                  Conseguir en Amazon
                 </a>
                 <button className="btn btn-ghost" onClick={() => onColor(ci, 0)}>
                   Colorear gratis
@@ -146,11 +149,15 @@ export function Collections({ onColor }: { onColor: (c: number, p: number) => vo
           <span>pronto</span>
         </div>
       </div>
+      <div className="swipe-catcher col-catcher" aria-hidden>
+        <div />
+      </div>
       <div className="col-dots" aria-label="Libros de la estantería">
+        <button className="pn-prev" aria-label="Libro anterior">‹</button>
         {Array.from({ length: (track.current?.children.length ?? collections.filter((c) => c.featured).length + 2) }).map((_, i) => (
           <button key={i} className={i === active ? 'on' : ''} onClick={() => goTo(i)} aria-label={`Ir a la ficha ${i + 1}`} />
         ))}
-        <span>Desliza o baja</span>
+        <button className="pn-next" aria-label="Libro siguiente">›</button>
       </div>
     </section>
   )
