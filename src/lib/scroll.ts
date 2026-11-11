@@ -89,7 +89,7 @@ export function stopsController(st: ScrollTrigger, stops: () => number[], durati
 }
 
 /**
- * Paginado para una sección fijada (dedo, rueda/trackpad y arrastre con ratón): mientras la sección ocupa la pantalla, cada gesto
+ * Paginado para una sección fijada (dedo y arrastre con ratón; la rueda va libre): mientras la sección ocupa la pantalla, cada gesto
  * del dedo (vertical u horizontal) avanza o retrocede exactamente una parada, sin inercia que
  * se salte páginas. En la última parada, seguir hacia delante suelta la sección.
  */
@@ -159,25 +159,6 @@ export function touchPager(
     decide(lx, ly, true)
     on = false
   }
-  // ---- rueda / trackpad: un gesto = una parada. La inercia del trackpad se ignora hasta que
-  // hay un silencio de 220 ms, así nunca se saltan páginas ni se pelea con el scroll suave.
-  let lastWheel = 0
-  let wheelLock = 0
-  const wheel = (e: WheelEvent) => {
-    if (e.ctrlKey || !inside() || (e.target as HTMLElement).closest?.('.lb, .studio')) return
-    e.preventDefault()
-    e.stopImmediatePropagation()
-    const now = performance.now()
-    const gap = now - lastWheel
-    lastWheel = now
-    if (now < wheelLock || gap < 220) return
-    const d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX
-    if (Math.abs(d) < 2) return
-    wheelLock = now + 650
-    fired = false
-    fire(0, d > 0 ? -1 : 1)
-  }
-
   // ---- arrastre con ratón: la página pasa a mitad del arrastre, sin esperar a soltar ----
   let mx = 0
   let my = 0
@@ -202,7 +183,6 @@ export function touchPager(
   window.addEventListener('touchmove', move, { passive: false })
   window.addEventListener('touchend', end, { passive: true })
   window.addEventListener('touchcancel', cancel, { passive: true })
-  window.addEventListener('wheel', wheel, { passive: false, capture: true })
   window.addEventListener('pointerdown', mDown)
   window.addEventListener('pointermove', mMove)
   window.addEventListener('pointerup', mUp)
@@ -211,7 +191,6 @@ export function touchPager(
     window.removeEventListener('touchmove', move)
     window.removeEventListener('touchend', end)
     window.removeEventListener('touchcancel', cancel)
-    window.removeEventListener('wheel', wheel, { capture: true })
     window.removeEventListener('pointerdown', mDown)
     window.removeEventListener('pointermove', mMove)
     window.removeEventListener('pointerup', mUp)
