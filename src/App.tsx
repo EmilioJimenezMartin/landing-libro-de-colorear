@@ -21,7 +21,7 @@ export default function App() {
   useEffect(() => {
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     if (reduce) return
-    const l = new Lenis({ lerp: 0.08, syncTouch: true, syncTouchLerp: 0.085, touchMultiplier: 1.2 })
+    const l = new Lenis({ lerp: 0.08 })
     lenis.current = l
     l.on('scroll', ScrollTrigger.update)
     const raf = (t: number) => l.raf(t * 1000)

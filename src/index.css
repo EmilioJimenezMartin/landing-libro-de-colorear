@@ -1992,3 +1992,69 @@ button.free-card {
     column-gap: 20px;
   }
 }
+
+/* ---------- estantería en móvil: carrusel nativo con imán ---------- */
+.col-dots {
+  display: none;
+}
+@media (max-width: 859px) {
+  .collections {
+    touch-action: auto;
+    padding-bottom: 28px;
+  }
+  .col-track {
+    width: auto;
+    height: auto;
+    min-height: 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding: 80px 8vw 24px;
+    gap: 6vw;
+    align-items: center;
+  }
+  .col-track::-webkit-scrollbar {
+    display: none;
+  }
+  .col-intro,
+  .col-panel,
+  .col-outro {
+    scroll-snap-align: center;
+    scroll-snap-stop: always;
+  }
+  .col-intro {
+    width: 84vw;
+  }
+  .col-book {
+    transition: transform 0.15s linear;
+  }
+  .col-dots {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+  }
+  .col-dots button {
+    width: 7px;
+    height: 7px;
+    padding: 0;
+    border-radius: 50%;
+    background: rgba(243, 234, 216, 0.25);
+    transition: width 0.3s, background 0.3s;
+  }
+  .col-dots button.on {
+    width: 22px;
+    border-radius: 4px;
+    background: var(--gold);
+  }
+  .col-dots span {
+    margin-left: 8px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+}

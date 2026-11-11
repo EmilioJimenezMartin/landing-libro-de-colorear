@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import gsap from 'gsap'
 import { collections } from '../data'
 import { BookCover } from './BookCover'
@@ -11,7 +11,7 @@ export function Collections({ onColor }: { onColor: (c: number, p: number) => vo
 
   useLayoutEffect(() => {
     const mm = gsap.matchMedia()
-    mm.add('(prefers-reduced-motion: no-preference)', () => {
+    mm.add('(min-width: 860px) and (prefers-reduced-motion: no-preference)', () => {
       const t = track.current!
       const dist = () => t.scrollWidth - window.innerWidth
       // paradas: cada libro centrado en pantalla (más la intro y el final)
@@ -51,8 +51,50 @@ export function Collections({ onColor }: { onColor: (c: number, p: number) => vo
         ctl.kill()
       }
     })
+    // Móvil: carrusel nativo con imán (scroll-snap). Los libros giran según su posición y los
+    // puntos indican cuál se ve.
+    mm.add('(max-width: 859px)', () => {
+      const t = track.current!
+      const books = [...t.querySelectorAll<HTMLElement>('.col-book')]
+      const items = [...t.children] as HTMLElement[]
+      let raf = 0
+      const update = () => {
+        raf = 0
+        const mid = t.scrollLeft + t.clientWidth / 2
+        let best = 0
+        let bestD = Infinity
+        items.forEach((it, i) => {
+          const d = Math.abs(it.offsetLeft + it.offsetWidth / 2 - mid)
+          if (d < bestD) {
+            bestD = d
+            best = i
+          }
+        })
+        setActive(best)
+        books.forEach((b) => {
+          const panel = b.closest('.col-panel') as HTMLElement
+          const off = (panel.offsetLeft + panel.offsetWidth / 2 - mid) / t.clientWidth
+          b.style.transform = `rotateY(${-22 + off * -40}deg) rotateX(6deg)`
+        })
+      }
+      const onScroll = () => {
+        if (!raf) raf = requestAnimationFrame(update)
+      }
+      update()
+      t.addEventListener('scroll', onScroll, { passive: true })
+      return () => {
+        t.removeEventListener('scroll', onScroll)
+        books.forEach((b) => (b.style.transform = ''))
+      }
+    })
     return () => mm.revert()
   }, [])
+
+  const [active, setActive] = useState(0)
+  const goTo = (i: number) => {
+    const it = track.current!.children[i] as HTMLElement | undefined
+    if (it) track.current!.scrollTo({ left: it.offsetLeft - (track.current!.clientWidth - it.offsetWidth) / 2, behavior: 'smooth' })
+  }
 
   return (
     <section className="collections" id="colecciones" ref={root} aria-label="Colecciones">
@@ -118,6 +160,12 @@ export function Collections({ onColor }: { onColor: (c: number, p: number) => vo
           <span>Más</span>
           <span>pronto</span>
         </div>
+      </div>
+      <div className="col-dots" aria-label="Libros de la estantería">
+        {Array.from({ length: (track.current?.children.length ?? collections.filter((c) => c.featured).length + 2) }).map((_, i) => (
+          <button key={i} className={i === active ? 'on' : ''} onClick={() => goTo(i)} aria-label={`Ir a la ficha ${i + 1}`} />
+        ))}
+        <span>Desliza</span>
       </div>
     </section>
   )

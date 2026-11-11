@@ -10,35 +10,45 @@ export function scrollToY(y: number, duration = 1.1) {
 }
 
 /**
- * Detecta un deslizamiento horizontal (dedo o ratón arrastrado) sobre `el`.
+ * Detecta un deslizamiento horizontal sobre `el`: con eventos táctiles reales en el móvil
+ * (los de puntero no son fiables en Safari/iOS) y con el ratón arrastrado en el ordenador.
  * Devuelve la función para quitar los listeners.
  */
-export function onSwipe(el: HTMLElement, cb: (dir: 1 | -1) => void, min = 50) {
+export function onSwipe(el: HTMLElement, cb: (dir: 1 | -1) => void, min = 45) {
   let sx = 0
   let sy = 0
-  let id: number | null = null
-  const down = (e: PointerEvent) => {
-    if (e.pointerType === 'mouse' && e.button !== 0) return
-    if ((e.target as HTMLElement).closest('a, button, input, label')) return
-    id = e.pointerId
+  let active = false
+  const skip = (t: EventTarget | null) => !!(t as HTMLElement | null)?.closest?.('a, button, input, label')
+  const finish = (x: number, y: number) => {
+    if (!active) return
+    active = false
+    const dx = x - sx
+    const dy = y - sy
+    if (Math.abs(dx) > min && Math.abs(dx) > Math.abs(dy) * 1.2) cb(dx < 0 ? 1 : -1)
+  }
+  const tStart = (e: TouchEvent) => {
+    if (e.touches.length !== 1 || skip(e.target)) return (active = false)
+    active = true
+    sx = e.touches[0].clientX
+    sy = e.touches[0].clientY
+  }
+  const tEnd = (e: TouchEvent) => finish(e.changedTouches[0].clientX, e.changedTouches[0].clientY)
+  const mDown = (e: PointerEvent) => {
+    if (e.pointerType !== 'mouse' || e.button !== 0 || skip(e.target)) return
+    active = true
     sx = e.clientX
     sy = e.clientY
   }
-  const up = (e: PointerEvent) => {
-    if (id !== e.pointerId) return
-    id = null
-    const dx = e.clientX - sx
-    const dy = e.clientY - sy
-    if (Math.abs(dx) > min && Math.abs(dx) > Math.abs(dy) * 1.3) cb(dx < 0 ? 1 : -1)
-  }
-  const cancel = () => (id = null)
-  el.addEventListener('pointerdown', down)
-  el.addEventListener('pointerup', up)
-  el.addEventListener('pointercancel', cancel)
+  const mUp = (e: PointerEvent) => e.pointerType === 'mouse' && finish(e.clientX, e.clientY)
+  el.addEventListener('touchstart', tStart, { passive: true })
+  el.addEventListener('touchend', tEnd, { passive: true })
+  el.addEventListener('pointerdown', mDown)
+  window.addEventListener('pointerup', mUp)
   return () => {
-    el.removeEventListener('pointerdown', down)
-    el.removeEventListener('pointerup', up)
-    el.removeEventListener('pointercancel', cancel)
+    el.removeEventListener('touchstart', tStart)
+    el.removeEventListener('touchend', tEnd)
+    el.removeEventListener('pointerdown', mDown)
+    window.removeEventListener('pointerup', mUp)
   }
 }
 
@@ -73,4 +83,49 @@ export function stopsController(st: ScrollTrigger, stops: () => number[], durati
   }
   ScrollTrigger.addEventListener('scrollEnd', settle)
   return { step, kill: () => ScrollTrigger.removeEventListener('scrollEnd', settle) }
+}
+
+/**
+ * Paginado táctil para una sección fijada: mientras la sección ocupa la pantalla, cada gesto
+ * del dedo (vertical u horizontal) avanza o retrocede exactamente una parada, sin inercia que
+ * se salte páginas. En la última parada, seguir hacia delante suelta la sección.
+ */
+export function touchPager(st: ScrollTrigger, step: (dir: 1 | -1) => void, isLast: () => boolean, isFirst: () => boolean) {
+  let sx = 0
+  let sy = 0
+  let on = false
+  const inside = () => window.scrollY < st.end - 4
+  const start = (e: TouchEvent) => {
+    on = e.touches.length === 1 && inside() && !(e.target as HTMLElement).closest?.('.lb')
+    if (!on) return
+    sx = e.touches[0].clientX
+    sy = e.touches[0].clientY
+  }
+  const move = (e: TouchEvent) => {
+    if (on && e.cancelable) e.preventDefault()
+  }
+  const end = (e: TouchEvent) => {
+    if (!on) return
+    on = false
+    const dx = e.changedTouches[0].clientX - sx
+    const dy = e.changedTouches[0].clientY - sy
+    const big = Math.max(Math.abs(dx), Math.abs(dy))
+    if (big < 28) return
+    const dir: 1 | -1 = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 1 : -1) : dy < 0 ? 1 : -1
+    if (dir === 1 && isLast()) {
+      markBusy(0.8)
+      scrollToY(st.end + 2, 0.8)
+      return
+    }
+    if (dir === -1 && isFirst()) return
+    step(dir)
+  }
+  window.addEventListener('touchstart', start, { passive: true })
+  window.addEventListener('touchmove', move, { passive: false })
+  window.addEventListener('touchend', end, { passive: true })
+  return () => {
+    window.removeEventListener('touchstart', start)
+    window.removeEventListener('touchmove', move)
+    window.removeEventListener('touchend', end)
+  }
 }
