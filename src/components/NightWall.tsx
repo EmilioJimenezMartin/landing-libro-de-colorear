@@ -60,7 +60,19 @@ export function NightWall() {
         },
       })
     }
+    // Fuera de pantalla no se anima nada: ahorra GPU y batería.
+    const io = new IntersectionObserver(([en]) => {
+      if (en.isIntersecting) {
+        drift.resume()
+        wander?.resume()
+      } else {
+        drift.pause()
+        wander?.pause()
+      }
+    })
+    io.observe(el)
     return () => {
+      io.disconnect()
       drift.kill()
       wander?.kill()
       window.removeEventListener('pointermove', move)
