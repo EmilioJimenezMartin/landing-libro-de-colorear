@@ -4,7 +4,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { collections } from '../data'
 import { BookCover } from './BookCover'
 import { ColoredPage } from './ColoredPage'
-import { onSwipe, scrollToY, stopsController, touchPager } from '../lib/scroll'
+import { scrollToY, stopsController, touchPager } from '../lib/scroll'
 
 export function Collections({ onColor }: { onColor: (c: number, p: number) => void }) {
   const root = useRef<HTMLElement>(null)
@@ -39,19 +39,12 @@ export function Collections({ onColor }: { onColor: (c: number, p: number) => vo
       })
       const st = tween.scrollTrigger!
       const ctl = stopsController(st, stops, 0.9)
-      // Táctil: cada gesto (vertical u horizontal) pasa exactamente un libro.
-      const coarse = window.matchMedia('(pointer: coarse)').matches
-      const offPager = coarse
-        ? touchPager(st, (d) => ctl.step(d), () => st.progress > 0.995, () => st.progress < 0.005, {
-            // hacia atrás se vuelve a la última página del libro
-            prev: () => ScrollTrigger.getAll().find((s) => s.trigger?.id === 'libro')?.end ?? st.start - 2,
-          })
-        : () => {}
-      const offSwipe = coarse
-        ? () => {}
-        : onSwipe(root.current!, (dir) => {
-            if (st.isActive) ctl.step(dir)
-          })
+      // Dedo, rueda/trackpad y arrastre con ratón: cada gesto pasa exactamente un libro.
+      const offPager = touchPager(st, (d) => ctl.step(d), () => st.progress > 0.995, () => st.progress < 0.005, {
+        // hacia atrás se vuelve a la última página del libro
+        prev: () => ScrollTrigger.getAll().find((s) => s.trigger?.id === 'libro')?.end ?? st.start - 2,
+      })
+      const offSwipe = () => {}
       // puntos: qué ficha está centrada
       const itemStops = () => {
         const d = dist()

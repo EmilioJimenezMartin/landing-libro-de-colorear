@@ -317,6 +317,7 @@ a {
   white-space: nowrap;
   color: transparent;
   -webkit-text-stroke: 1.4px var(--gold);
+  text-shadow: 0 0 2px rgba(7, 6, 10, 0.55), 0 6px 28px rgba(7, 6, 10, 0.5);
   opacity: 0;
 }
 .hero-copy {
@@ -2032,4 +2033,11 @@ button.free-card {
     text-transform: uppercase;
     color: var(--muted);
   }
+}
+
+/* arrastrar con el ratón para pasar página no debe seleccionar texto */
+.stage,
+.collections {
+  user-select: none;
+  -webkit-user-select: none;
 }

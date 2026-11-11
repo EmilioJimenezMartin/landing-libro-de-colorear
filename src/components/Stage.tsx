@@ -5,7 +5,7 @@ import { collections, ritualPages } from '../data'
 import { ColoredPage } from './ColoredPage'
 import { BookCover } from './BookCover'
 import { NightWall } from './NightWall'
-import { onSwipe, stopsController, touchPager } from '../lib/scroll'
+import { stopsController, touchPager } from '../lib/scroll'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -131,17 +131,13 @@ export function Stage({ onCta }: { onCta: (id: string) => void }) {
         const step = (dir: 1 | -1) => {
           if (st.isActive || (dir === 1 && st.progress === 0)) ctl.step(dir)
         }
-        // En pantallas táctiles cada gesto es una página exacta (sin inercia nativa que se salte
-        // hojas); en el ordenador, la rueda va libre y se asienta en la parada, y el ratón arrastrado pasa hoja.
-        const coarse = window.matchMedia('(pointer: coarse)').matches
+        // Dedo, rueda/trackpad y arrastre con ratón: cada gesto es una página exacta.
         const stopsList = () => Object.values(tl.labels).sort((a, b) => a - b).map((v) => v / tl.duration())
-        const offPager = coarse
-          ? touchPager(st, (d) => ctl.step(d), () => st.progress > stopsList().at(-2)! + 0.01, () => st.progress < 0.01, {
+        const offPager = touchPager(st, (d) => ctl.step(d), () => st.progress > stopsList().at(-2)! + 0.01, () => st.progress < 0.01, {
               // al salir del libro se llega directo a la estantería, sin inercia de por medio
               next: () => ScrollTrigger.getAll().find((s) => s.trigger?.id === 'colecciones')?.start ?? st.end + 2,
             })
-          : () => {}
-        const offSwipe = coarse ? () => {} : onSwipe(el, step)
+        const offSwipe = () => {}
         const key = (e: KeyboardEvent) => {
           if (!tl.scrollTrigger!.isActive) return
           if (e.key === 'ArrowRight') step(1)
