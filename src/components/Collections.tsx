@@ -5,7 +5,7 @@ import { collections } from '../data'
 import { BookCover } from './BookCover'
 import { ColoredPage } from './ColoredPage'
 import { scrollToY, stopsController, touchPager } from '../lib/scroll'
-import { getDeck, isTouch, mobileDeck } from '../lib/deck'
+import { getDeck, glideTo, isTouch, mobileDeck } from '../lib/deck'
 
 export function Collections({ onColor }: { onColor: (c: number, p: number) => void }) {
   const root = useRef<HTMLElement>(null)
@@ -44,26 +44,19 @@ export function Collections({ onColor }: { onColor: (c: number, p: number) => vo
         const deck = mobileDeck({
           id: 'colecciones',
           el: root.current!,
+          axis: 'both',
           autoEnter: true,
           count: () => pos().length,
-          show: (i, instant) => {
-            tw?.kill()
+          busy: () => !!tw?.isActive(),
+          show: (i) => {
             const x = pos()[i]
             setActive(xs().map(Math.round).lastIndexOf(x))
-            if (instant) {
-              gsap.set(t, { x })
-              tilt()
-              return 0
-            }
-            tw = gsap.to(t, { x, duration: 0.85, ease: 'power3.inOut', onUpdate: tilt })
-            return 0.85
+            if (Math.abs((gsap.getProperty(t, 'x') as number) - x) < 1) return
+            tw?.kill()
+            tw = gsap.to(t, { x, duration: 0.8, ease: 'power2.inOut', onUpdate: tilt })
           },
-          onNext: () => scrollToY(root.current!.offsetTop + root.current!.offsetHeight, 1),
-          onPrev: () => {
-            const book = getDeck('libro')
-            if (book) book.enter(99, true)
-            else scrollToY(root.current!.offsetTop - window.innerHeight, 1)
-          },
+          onNext: () => glideTo(root.current!.offsetTop + root.current!.offsetHeight, () => document.documentElement.classList.remove('deck-lock')),
+          onPrev: () => getDeck('libro')?.enter(99),
         })
         tilt()
         goToRef.current = (i: number) => deck.go(pos().indexOf(Math.round(xs()[i])))

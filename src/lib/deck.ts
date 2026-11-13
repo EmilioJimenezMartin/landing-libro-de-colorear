@@ -1,178 +1,186 @@
+import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
-import { scrollToY } from './scroll'
+import { ScrollToPlugin } from 'gsap/ScrollToPlugin'
+
+gsap.registerPlugin(ScrollTrigger, ScrollToPlugin)
 
 /**
- * "Mazo" para pantallas táctiles: mientras una sección está activa, la página NO hace scroll.
- * Cada gesto del dedo (arriba/abajo o izquierda/derecha) reproduce una animación completa hasta
- * el paso siguiente o el anterior. Así no hay inercia nativa que pelee con la animación ni
- * saltos de varias páginas de golpe. En el último paso, seguir hacia delante suelta la página.
+ * Pantallas táctiles: el libro y la estantería funcionan como un "mazo" de pasos.
+ * - Mientras una sección está activa, la página no hace scroll: el dedo no mueve nada por sí mismo.
+ * - Cada gesto avanza o retrocede un paso; si llega otro gesto en plena animación, la animación se
+ *   reencadena hacia el nuevo destino (sin perder el gesto y sin saltos).
+ * - Los cambios de sección los anima la propia web (scroll programado) con la página aún bloqueada.
  */
 
 export type Deck = {
-  /** activa la sección en el paso `i` (desplazando la página hasta ella si hace falta) */
-  enter: (i: number, scroll?: boolean) => void
-  release: () => void
-  /** salta a un paso concreto (puntos de navegación) */
+  /** activa la sección en el paso `i`, deslizando la página hasta ella */
+  enter: (i: number, glide?: boolean) => void
   go: (i: number) => void
-  fire: (dir: 1 | -1) => void
+  /** `lateral`: los gestos laterales pasan pasos pero nunca cambian de sección */
+  fire: (dir: 1 | -1, lateral?: boolean) => void
   isLocked: () => boolean
   kill: () => void
 }
 
-const decks = new Map<string, Deck>()
-let active: Deck | null = null
-/** durante desplazamientos programados, las secciones no se enganchan solas */
-let quietUntil = 0
-const quiet = (s: number) => (quietUntil = Math.max(quietUntil, performance.now() + s * 1000))
-
-export const getDeck = (id: string) => decks.get(id)
-/** suelta cualquier sección activa (p. ej. antes de navegar con el menú) */
-export const releaseDecks = (s = 2) => {
-  quiet(s)
-  active?.release()
-}
-/** tras una navegación, activa la sección en cuyo inicio ha quedado la página */
-export const settleDecks = () => {
-  quietUntil = 0
-  for (const [id, d] of decks) {
-    const el = document.getElementById(id)
-    if (el && Math.abs(el.getBoundingClientRect().top) < 24) return d.enter(0, true)
-  }
-}
-
-export function mobileDeck(opts: {
+type Opts = {
   id: string
   el: HTMLElement
   count: () => number
-  /** anima hasta el paso `i`; devuelve cuánto tarda (s) */
-  show: (i: number, instant?: boolean) => number
-  /** al pasar del último paso */
-  onNext: () => void
-  /** al retroceder desde el primero */
-  onPrev: () => void
-  onStep?: (i: number) => void
-  /** engancharse sola al llegar con el dedo (desde arriba: paso 0; desde abajo: último) */
+  /** anima el paso `i` */
+  show: (i: number) => void
+  /** ¿sigue animándose el paso actual? */
+  busy: () => boolean
+  /** 'y': solo gestos verticales; 'both': también laterales */
+  axis: 'y' | 'both'
+  onNext?: () => void
+  onPrev?: () => void
+  /** engancharse sola al llegar con scroll libre (desde abajo: último paso) */
   autoEnter?: boolean
-}): Deck {
-  const { el } = opts
+}
+
+type D = Deck & { axis: Opts['axis']; el: HTMLElement }
+const decks = new Map<string, D>()
+let active: D | null = null
+let moving = false
+const lockPage = (on: boolean) => document.documentElement.classList.toggle('deck-lock', on)
+
+export const isTouch = () => window.matchMedia('(pointer: coarse)').matches
+export const getDeck = (id: string) => decks.get(id)
+
+/** desplazamiento programado y suave de la página (sigue bloqueada al dedo mientras dura) */
+export function glideTo(y: number, done?: () => void, duration = 1) {
+  moving = true
+  lockPage(true)
+  gsap.to(window, {
+    scrollTo: { y, autoKill: false },
+    duration,
+    ease: 'power2.inOut',
+    overwrite: true,
+    onComplete: () => {
+      moving = false
+      ScrollTrigger.update()
+      done?.()
+    },
+  })
+}
+
+/** navegar a una posición (menú, botones): suelta la sección activa y engancha la de destino */
+export function navigate(y: number) {
+  active = null
+  glideTo(
+    y,
+    () => {
+      for (const d of decks.values()) {
+        if (Math.abs(d.el.getBoundingClientRect().top) < 4) return d.enter(0, false)
+      }
+      lockPage(false)
+    },
+    1.2,
+  )
+}
+
+export function mobileDeck(o: Opts): Deck {
   let i = 0
-  let locked = false
-  let busyUntil = 0
-  const html = document.documentElement
-  const top = () => el.getBoundingClientRect().top + window.scrollY
+  const top = () => o.el.getBoundingClientRect().top + window.scrollY
+  const clamp = (n: number) => Math.max(0, Math.min(o.count() - 1, n))
 
-  const set = (n: number, instant = false) => {
-    i = n
-    opts.onStep?.(i)
-    const d = opts.show(i, instant)
-    busyUntil = performance.now() + d * 1000 * 0.82
-  }
-
-  const lockNow = () => {
-    locked = true
-    active = deck
-    window.scrollTo(0, top())
-    html.classList.add('deck-lock')
-  }
-
-  const deck: Deck = {
-    enter(n, scroll = false) {
-      n = Math.max(0, Math.min(opts.count() - 1, n))
-      if (active && active !== deck) active.release()
+  const deck: D = {
+    axis: o.axis,
+    el: o.el,
+    enter(n, glide = true) {
+      active = deck
+      i = clamp(n)
+      lockPage(true)
+      o.show(i)
       const y = top()
-      if (scroll && Math.abs(window.scrollY - y) > 2) {
-        busyUntil = performance.now() + 1100
-        scrollToY(y, 0.9)
-        setTimeout(() => {
-          lockNow()
-          set(n)
-        }, 950)
-        return
-      }
-      lockNow()
-      set(n)
-    },
-    release() {
-      locked = false
-      if (active === deck) active = null
-      html.classList.remove('deck-lock')
-    },
-    fire(dir) {
-      if (performance.now() < busyUntil) return
-      if (!locked) {
-        if (Math.abs(el.getBoundingClientRect().top) > 24) return
-        lockNow()
-      }
-      const n = i + dir
-      if (n >= opts.count()) {
-        busyUntil = performance.now() + 900
-        quiet(1.3)
-        deck.release()
-        opts.onNext()
-      } else if (n < 0) {
-        busyUntil = performance.now() + 900
-        quiet(1.3)
-        deck.release()
-        opts.onPrev()
-      } else set(n)
+      if (glide && Math.abs(window.scrollY - y) > 1) glideTo(y)
+      else window.scrollTo(0, y)
     },
     go(n) {
-      if (!locked) return deck.enter(n, true)
-      set(Math.max(0, Math.min(opts.count() - 1, n)))
+      if (active !== deck) return deck.enter(n)
+      i = clamp(n)
+      o.show(i)
     },
-    isLocked: () => locked,
+    fire(dir, lateral = false) {
+      if (moving || active !== deck) return
+      const n = i + dir
+      if ((n >= o.count() || n < 0) && lateral) return
+      if (n >= o.count()) {
+        if (!o.onNext || o.busy()) return
+        active = null
+        o.onNext()
+      } else if (n < 0) {
+        if (!o.onPrev || o.busy()) return
+        active = null
+        o.onPrev()
+      } else {
+        i = n
+        o.show(i)
+      }
+    },
+    isLocked: () => active === deck,
     kill() {
-      deck.release()
-      decks.delete(opts.id)
+      if (active === deck) {
+        active = null
+        lockPage(false)
+      }
+      decks.delete(o.id)
       trig?.kill()
-      window.removeEventListener('touchstart', start)
-      window.removeEventListener('touchmove', move)
-      window.removeEventListener('touchend', end)
-      window.removeEventListener('touchcancel', end)
     },
   }
 
-  // ---- gestos: un gesto = un paso; la dirección se decide en cuanto está clara ----
+  const trig = o.autoEnter
+    ? ScrollTrigger.create({
+        trigger: o.el,
+        start: 'top top',
+        onLeaveBack: () => !moving && !active && deck.enter(o.count() - 1),
+        onEnter: () => !moving && !active && deck.enter(0),
+      })
+    : null
+
+  decks.set(o.id, deck)
+  installGestures()
+  return deck
+}
+
+// ---- gestos (una sola vez para toda la página) ----
+let installed = false
+function installGestures() {
+  if (installed) return
+  installed = true
   let sx = 0
   let sy = 0
   let on = false
   let fired = false
-  const start = (e: TouchEvent) => {
-    on = locked && e.touches.length === 1 && !(e.target as HTMLElement).closest?.('.lb')
-    fired = false
-    if (!on) return
-    sx = e.touches[0].clientX
-    sy = e.touches[0].clientY
-  }
-  const move = (e: TouchEvent) => {
-    if (!locked) return
-    if (e.cancelable) e.preventDefault()
-    if (!on || fired || e.touches.length !== 1) return
-    const dx = e.touches[0].clientX - sx
-    const dy = e.touches[0].clientY - sy
-    const ax = Math.abs(dx)
-    const ay = Math.abs(dy)
-    if (Math.max(ax, ay) < 28) return
-    fired = true
-    deck.fire(ax > ay ? (dx < 0 ? 1 : -1) : dy < 0 ? 1 : -1)
-  }
+  window.addEventListener(
+    'touchstart',
+    (e) => {
+      on = e.touches.length === 1 && !(e.target as HTMLElement).closest?.('.lb')
+      fired = false
+      sx = e.touches[0].clientX
+      sy = e.touches[0].clientY
+    },
+    { passive: true },
+  )
+  window.addEventListener(
+    'touchmove',
+    (e) => {
+      if (!active && !moving) return
+      if (e.cancelable) e.preventDefault()
+      if (!on || fired || !active || e.touches.length !== 1) return
+      const dx = e.touches[0].clientX - sx
+      const dy = e.touches[0].clientY - sy
+      const ax = Math.abs(dx)
+      const ay = Math.abs(dy)
+      if (Math.max(ax, ay) < 22) return
+      fired = true
+      if (ax > ay) {
+        if (active.axis === 'both') active.fire(dx < 0 ? 1 : -1, true)
+      } else active.fire(dy < 0 ? 1 : -1)
+    },
+    { passive: false },
+  )
   const end = () => (on = false)
-  window.addEventListener('touchstart', start, { passive: true })
-  window.addEventListener('touchmove', move, { passive: false })
   window.addEventListener('touchend', end, { passive: true })
   window.addEventListener('touchcancel', end, { passive: true })
-
-  const trig = opts.autoEnter
-    ? ScrollTrigger.create({
-        trigger: el,
-        start: 'top top',
-        onEnter: () => performance.now() > quietUntil && !locked && deck.enter(0),
-        onLeaveBack: () => performance.now() > quietUntil && !locked && deck.enter(opts.count() - 1),
-      })
-    : null
-
-  decks.set(opts.id, deck)
-  return deck
 }
-
-export const isTouch = () => window.matchMedia('(pointer: coarse)').matches

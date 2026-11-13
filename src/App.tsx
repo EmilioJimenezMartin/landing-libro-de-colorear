@@ -9,7 +9,7 @@ import { Footer, FreePages, Hud, Preloader } from './components/Extras'
 import { Lightbox, type ViewerItem } from './components/Lightbox'
 import { collections } from './data'
 import { SCROLL_EVENT } from './lib/scroll'
-import { releaseDecks, settleDecks } from './lib/deck'
+import { isTouch, navigate } from './lib/deck'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -21,7 +21,8 @@ export default function App() {
 
   useEffect(() => {
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    if (reduce) return
+    // En pantallas táctiles el scroll es el nativo: Lenis solo suaviza rueda y trackpad.
+    if (reduce || isTouch()) return
     const l = new Lenis({ lerp: 0.08 })
     lenis.current = l
     l.on('scroll', ScrollTrigger.update)
@@ -38,7 +39,7 @@ export default function App() {
     const to = (e: Event) => {
       const { y, duration } = (e as CustomEvent<{ y: number; duration: number }>).detail
       if (lenis.current) lenis.current.scrollTo(y, { duration, easing: (t: number) => 1 - Math.pow(1 - t, 3) })
-      else window.scrollTo({ top: y, behavior: 'smooth' })
+      else navigate(y)
     }
     window.addEventListener(SCROLL_EVENT, to)
     return () => window.removeEventListener(SCROLL_EVENT, to)
@@ -58,12 +59,8 @@ export default function App() {
   const go = useCallback((id: string) => {
     const el = document.querySelector(id) as HTMLElement | null
     if (!el) return
-    releaseDecks()
-    if (lenis.current) lenis.current.scrollTo(el, { duration: 1.6, onComplete: settleDecks })
-    else {
-      el.scrollIntoView()
-      setTimeout(settleDecks, 900)
-    }
+    if (lenis.current) lenis.current.scrollTo(el, { duration: 1.6 })
+    else navigate(el.getBoundingClientRect().top + window.scrollY)
   }, [])
 
   const colorPage = useCallback(

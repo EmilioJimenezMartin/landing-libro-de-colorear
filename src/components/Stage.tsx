@@ -5,8 +5,8 @@ import { collections, ritualPages } from '../data'
 import { ColoredPage } from './ColoredPage'
 import { BookCover } from './BookCover'
 import { NightWall } from './NightWall'
-import { scrollToY, stopsController, touchPager } from '../lib/scroll'
-import { getDeck, isTouch, mobileDeck } from '../lib/deck'
+import { stopsController, touchPager } from '../lib/scroll'
+import { getDeck, glideTo, isTouch, mobileDeck } from '../lib/deck'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -117,6 +117,7 @@ export function Stage({ onCta }: { onCta: (id: string) => void }) {
             tl.to(words[k], { opacity: 0, yPercent: -30, duration: 0.4 }, t + 1.8)
             tl.to(words[k + 1], { opacity: 1, yPercent: 0, duration: 0.5 }, t + 2.2)
             t += 2.9
+            if (touch) tl.addLabel(`hoja-${k + 2}`, t)
           } else {
             t += 1.8
           }
@@ -129,30 +130,29 @@ export function Stage({ onCta }: { onCta: (id: string) => void }) {
         tl.addLabel('fin', t + 1)
 
         if (touch) {
+          // Un gesto = un paso: abrir, pintar, pasar hoja, pintar... Si llega otro gesto en plena
+          // animación, se reencadena hacia el nuevo destino.
           const labels = () => Object.values(tl.labels).sort((a, b) => a - b)
           let tw: gsap.core.Tween | null = null
           const deck = mobileDeck({
             id: 'libro',
             el,
+            axis: 'y',
             count: () => labels().length,
-            show: (i, instant) => {
+            busy: () => !!tw?.isActive(),
+            show: (i) => {
               const to = labels()[i]
+              const from = tl.time()
+              if (Math.abs(to - from) < 0.001) return
               tw?.kill()
-              if (instant) {
-                tl.seek(to)
-                return 0
-              }
-              // ritmo pausado para que se vea cómo se pinta cada página
-              const d = gsap.utils.clamp(0.9, 2.2, Math.abs(to - tl.time()) * 0.62)
-              tw = tl.tweenTo(to, { duration: d, ease: 'power1.inOut' })
-              return d
+              const d = gsap.utils.clamp(0.75, 1.5, Math.abs(to - from) * 0.55)
+              tw = tl.tweenTo(to, { duration: d, ease: 'sine.inOut' })
             },
             onNext: () => {
               const col = getDeck('colecciones')
-              if (col) col.enter(0, true)
-              else scrollToY(el.offsetTop + el.offsetHeight, 1)
+              if (col) col.enter(0)
+              else glideTo(el.offsetTop + el.offsetHeight)
             },
-            onPrev: () => {},
           })
           const prevBtn = q('.page-nav .pn-prev')[0]
           const nextBtn = q('.page-nav .pn-next')[0]
@@ -160,8 +160,13 @@ export function Stage({ onCta }: { onCta: (id: string) => void }) {
           const next = () => deck.fire(1)
           prevBtn?.addEventListener('click', prev)
           nextBtn?.addEventListener('click', next)
-          // la página arranca arriba del todo: el libro se engancha en cuanto termina la carga
-          const arm = () => window.scrollY < 4 && !deck.isLocked() && deck.enter(0)
+          // la página arranca arriba del todo y el libro se engancha al terminar la carga
+          if ('scrollRestoration' in history) history.scrollRestoration = 'manual'
+          const arm = () => {
+            if (deck.isLocked()) return
+            window.scrollTo(0, 0)
+            deck.enter(0, false)
+          }
           const t0 = setTimeout(arm, 50)
           window.addEventListener('noctinta:ready', arm)
           return () => {
