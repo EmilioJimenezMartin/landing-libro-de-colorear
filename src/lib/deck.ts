@@ -51,6 +51,10 @@ export const getDeck = (id: string) => decks.get(id)
 export function glideTo(y: number, done?: () => void, duration = 1) {
   moving = true
   lockPage(true)
+  // corta en seco la inercia nativa (iOS) antes de animar el desplazamiento
+  const de = document.documentElement
+  de.style.overflow = 'hidden'
+  requestAnimationFrame(() => (de.style.overflow = ''))
   gsap.to(window, {
     scrollTo: { y, autoKill: false },
     duration,
@@ -155,6 +159,11 @@ function installGestures() {
   window.addEventListener(
     'touchstart',
     (e) => {
+      // seguro anti-atasco: si la sección activa no está en pantalla, se suelta la página
+      if (active && !moving && Math.abs(active.el.getBoundingClientRect().top) > 40) {
+        active = null
+        lockPage(false)
+      }
       on = e.touches.length === 1 && !(e.target as HTMLElement).closest?.('.lb')
       fired = false
       sx = e.touches[0].clientX

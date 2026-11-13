@@ -2042,9 +2042,10 @@ button.free-card {
 }
 
 /* ---------- móvil: libro y estantería por pasos (la página no hace scroll mientras tanto) ---------- */
+/* sin overflow:hidden: en iOS impide el desplazamiento animado entre secciones */
 html.deck-lock,
 html.deck-lock body {
-  overflow: hidden;
+  touch-action: none;
   overscroll-behavior: none;
 }
 .page-nav,
