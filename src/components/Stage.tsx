@@ -5,7 +5,8 @@ import { collections, ritualPages } from '../data'
 import { ColoredPage } from './ColoredPage'
 import { BookCover } from './BookCover'
 import { NightWall } from './NightWall'
-import { stopsController, touchPager } from '../lib/scroll'
+import { scrollToY, stopsController, touchPager } from '../lib/scroll'
+import { getDeck, isTouch, mobileDeck } from '../lib/deck'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -71,9 +72,12 @@ export function Stage({ onCta }: { onCta: (id: string) => void }) {
           scale: desk ? 1 : 0.82,
         })
 
+        // En pantallas táctiles el libro no va atado al scroll: cada gesto reproduce el paso entero.
+        const touch = isTouch()
         const tl = gsap.timeline({
           defaults: { ease: 'none' },
-          scrollTrigger: {
+          paused: touch,
+          scrollTrigger: touch ? undefined : {
             trigger: el,
             start: 'top top',
             end: () => `+=${window.innerHeight * 9}`,
@@ -124,6 +128,52 @@ export function Stage({ onCta }: { onCta: (id: string) => void }) {
         )
         tl.addLabel('fin', t + 1)
 
+        if (touch) {
+          const labels = () => Object.values(tl.labels).sort((a, b) => a - b)
+          let tw: gsap.core.Tween | null = null
+          const deck = mobileDeck({
+            id: 'libro',
+            el,
+            count: () => labels().length,
+            show: (i, instant) => {
+              const to = labels()[i]
+              tw?.kill()
+              if (instant) {
+                tl.seek(to)
+                return 0
+              }
+              // ritmo pausado para que se vea cómo se pinta cada página
+              const d = gsap.utils.clamp(0.9, 2.2, Math.abs(to - tl.time()) * 0.62)
+              tw = tl.tweenTo(to, { duration: d, ease: 'power1.inOut' })
+              return d
+            },
+            onNext: () => {
+              const col = getDeck('colecciones')
+              if (col) col.enter(0, true)
+              else scrollToY(el.offsetTop + el.offsetHeight, 1)
+            },
+            onPrev: () => {},
+          })
+          const prevBtn = q('.page-nav .pn-prev')[0]
+          const nextBtn = q('.page-nav .pn-next')[0]
+          const prev = () => deck.fire(-1)
+          const next = () => deck.fire(1)
+          prevBtn?.addEventListener('click', prev)
+          nextBtn?.addEventListener('click', next)
+          // la página arranca arriba del todo: el libro se engancha en cuanto termina la carga
+          const arm = () => window.scrollY < 4 && !deck.isLocked() && deck.enter(0)
+          const t0 = setTimeout(arm, 50)
+          window.addEventListener('noctinta:ready', arm)
+          return () => {
+            clearTimeout(t0)
+            window.removeEventListener('noctinta:ready', arm)
+            prevBtn?.removeEventListener('click', prev)
+            nextBtn?.removeEventListener('click', next)
+            tw?.kill()
+            deck.kill()
+          }
+        }
+
         // Paradas: portada, libro abierto, cada página pintada y final. El scroll se asienta en
         // ellas y deslizar a izquierda/derecha (dedo o ratón) pasa a la siguiente o la anterior.
         const st = tl.scrollTrigger!
@@ -136,7 +186,6 @@ export function Stage({ onCta }: { onCta: (id: string) => void }) {
         const offPager = touchPager(st, (d) => ctl.step(d), () => st.progress > stopsList().at(-2)! + 0.01, () => st.progress < 0.01, {
               // al salir del libro se llega directo a la estantería, sin inercia de por medio
               next: () => ScrollTrigger.getAll().find((s) => s.trigger?.id === 'colecciones')?.start ?? st.end + 2,
-              catcher: el.querySelector<HTMLElement>('.swipe-catcher'),
               prevBtn: el.querySelector<HTMLElement>('.page-nav .pn-prev'),
               nextBtn: el.querySelector<HTMLElement>('.page-nav .pn-next'),
             })
@@ -239,9 +288,6 @@ export function Stage({ onCta }: { onCta: (id: string) => void }) {
         </div>
       </div>
 
-      <div className="swipe-catcher" aria-hidden>
-        <div />
-      </div>
       <div className="page-nav">
         <button className="pn-prev" aria-label="Página anterior">‹</button>
         <span>Desliza o toca</span>

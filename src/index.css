@@ -2041,8 +2041,12 @@ button.free-card {
   -webkit-user-select: none;
 }
 
-/* ---------- móvil: capa nativa de deslizamiento lateral y flechas de respaldo ---------- */
-.swipe-catcher,
+/* ---------- móvil: libro y estantería por pasos (la página no hace scroll mientras tanto) ---------- */
+html.deck-lock,
+html.deck-lock body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
 .page-nav,
 .col-dots .pn-prev,
 .col-dots .pn-next {
@@ -2054,28 +2058,6 @@ button.free-card {
   z-index: 6;
 }
 @media (pointer: coarse) {
-  .swipe-catcher {
-    display: block;
-    position: absolute;
-    inset: 0;
-    z-index: 4;
-    overflow-x: auto;
-    overflow-y: hidden;
-    overscroll-behavior-x: contain;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-  .swipe-catcher::-webkit-scrollbar {
-    display: none;
-  }
-  .swipe-catcher > div {
-    width: 300%;
-    height: 100%;
-  }
-  .col-catcher {
-    bottom: auto;
-    height: 46%;
-  }
   .page-nav {
     position: absolute;
     left: 0;

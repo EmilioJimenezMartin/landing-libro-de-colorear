@@ -9,6 +9,7 @@ import { Footer, FreePages, Hud, Preloader } from './components/Extras'
 import { Lightbox, type ViewerItem } from './components/Lightbox'
 import { collections } from './data'
 import { SCROLL_EVENT } from './lib/scroll'
+import { releaseDecks, settleDecks } from './lib/deck'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -50,14 +51,19 @@ export default function App() {
       lenis.current?.start()
       ScrollTrigger.sort()
       ScrollTrigger.refresh()
+      window.dispatchEvent(new Event('noctinta:ready'))
     }
   }, [loading])
 
   const go = useCallback((id: string) => {
     const el = document.querySelector(id) as HTMLElement | null
     if (!el) return
-    if (lenis.current) lenis.current.scrollTo(el, { duration: 1.6 })
-    else el.scrollIntoView()
+    releaseDecks()
+    if (lenis.current) lenis.current.scrollTo(el, { duration: 1.6, onComplete: settleDecks })
+    else {
+      el.scrollIntoView()
+      setTimeout(settleDecks, 900)
+    }
   }, [])
 
   const colorPage = useCallback(

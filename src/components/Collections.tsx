@@ -5,6 +5,7 @@ import { collections } from '../data'
 import { BookCover } from './BookCover'
 import { ColoredPage } from './ColoredPage'
 import { scrollToY, stopsController, touchPager } from '../lib/scroll'
+import { getDeck, isTouch, mobileDeck } from '../lib/deck'
 
 export function Collections({ onColor }: { onColor: (c: number, p: number) => void }) {
   const root = useRef<HTMLElement>(null)
@@ -23,6 +24,61 @@ export function Collections({ onColor }: { onColor: (c: number, p: number) => vo
         const items = [...t.children] as HTMLElement[]
         const pts = items.map((it) => Math.min(d, Math.max(0, it.offsetLeft - (window.innerWidth - it.offsetWidth) / 2)) / d)
         return [...new Set([0, ...pts, 1].map((v) => Math.round(v * 1000) / 1000))].sort((a, b) => a - b)
+      }
+      if (isTouch()) {
+        // Táctil: la estantería no va atada al scroll; cada gesto desliza un libro entero.
+        const xs = () => {
+          const d = dist()
+          return ([...t.children] as HTMLElement[]).map((it) => -Math.min(d, Math.max(0, it.offsetLeft - (window.innerWidth - it.offsetWidth) / 2)))
+        }
+        // posiciones distintas (las dos últimas fichas pueden quedar en el mismo tope)
+        const pos = () => [...new Set(xs().map(Math.round))]
+        const books = gsap.utils.toArray<HTMLElement>('.col-book', t)
+        const tilt = () =>
+          books.forEach((b) => {
+            const r = b.getBoundingClientRect()
+            const off = (r.left + r.width / 2 - window.innerWidth / 2) / window.innerWidth
+            gsap.set(b, { rotationY: gsap.utils.clamp(-38, 18, -10 - off * 40), rotationX: 2 })
+          })
+        let tw: gsap.core.Tween | null = null
+        const deck = mobileDeck({
+          id: 'colecciones',
+          el: root.current!,
+          autoEnter: true,
+          count: () => pos().length,
+          show: (i, instant) => {
+            tw?.kill()
+            const x = pos()[i]
+            setActive(xs().map(Math.round).lastIndexOf(x))
+            if (instant) {
+              gsap.set(t, { x })
+              tilt()
+              return 0
+            }
+            tw = gsap.to(t, { x, duration: 0.85, ease: 'power3.inOut', onUpdate: tilt })
+            return 0.85
+          },
+          onNext: () => scrollToY(root.current!.offsetTop + root.current!.offsetHeight, 1),
+          onPrev: () => {
+            const book = getDeck('libro')
+            if (book) book.enter(99, true)
+            else scrollToY(root.current!.offsetTop - window.innerHeight, 1)
+          },
+        })
+        tilt()
+        goToRef.current = (i: number) => deck.go(pos().indexOf(Math.round(xs()[i])))
+        const prevBtn = root.current!.querySelector<HTMLElement>('.col-dots .pn-prev')
+        const nextBtn = root.current!.querySelector<HTMLElement>('.col-dots .pn-next')
+        const prev = () => deck.fire(-1)
+        const next = () => deck.fire(1)
+        prevBtn?.addEventListener('click', prev)
+        nextBtn?.addEventListener('click', next)
+        return () => {
+          prevBtn?.removeEventListener('click', prev)
+          nextBtn?.removeEventListener('click', next)
+          tw?.kill()
+          deck.kill()
+        }
       }
       const tween = gsap.to(t, {
         x: () => -dist(),
@@ -43,7 +99,6 @@ export function Collections({ onColor }: { onColor: (c: number, p: number) => vo
       const offPager = touchPager(st, (d) => ctl.step(d), () => st.progress > 0.995, () => st.progress < 0.005, {
         // hacia atrás se vuelve a la última página del libro
         prev: () => ScrollTrigger.getAll().find((s) => s.trigger?.id === 'libro')?.end ?? st.start - 2,
-        catcher: root.current!.querySelector<HTMLElement>('.swipe-catcher'),
         prevBtn: root.current!.querySelector<HTMLElement>('.col-dots .pn-prev'),
         nextBtn: root.current!.querySelector<HTMLElement>('.col-dots .pn-next'),
       })
@@ -148,9 +203,6 @@ export function Collections({ onColor }: { onColor: (c: number, p: number) => vo
           <span>Más</span>
           <span>pronto</span>
         </div>
-      </div>
-      <div className="swipe-catcher col-catcher" aria-hidden>
-        <div />
       </div>
       <div className="col-dots" aria-label="Libros de la estantería">
         <button className="pn-prev" aria-label="Libro anterior">‹</button>
